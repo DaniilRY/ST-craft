@@ -181,7 +181,8 @@ public class TavernClient
         b.addProperty("presence_penalty", num(oai, "pres_pen_openai", 0));
         b.addProperty("top_p", num(oai, "top_p_openai", 1));
         b.addProperty("top_k", (int) num(oai, "top_k_openai", 0));
-        b.addProperty("max_tokens", (int) num(oai, "openai_max_tokens", 300));
+        //b.addProperty("max_tokens", (int) num(oai, "openai_max_tokens", 300));
+        b.addProperty("max_tokens", Math.max((int) num(oai, "openai_max_tokens", 300), Tuning.MIN_REPLY_TOKENS));
         b.addProperty("stream", stream);
         b.addProperty("chat_completion_source", source);
         b.addProperty("user_name", userName);

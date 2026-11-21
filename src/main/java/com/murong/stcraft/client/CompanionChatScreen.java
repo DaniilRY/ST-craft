@@ -195,8 +195,13 @@ public class CompanionChatScreen extends Screen {
         super.render(g, mx, my, pt);
         int l = left(), r = l + panelW(), t = top(), b = bottom();
         g.fill(l, t, r, b, 0xB0101015);
-        g.drawCenteredString(font, Component.literal(npcName).withStyle(ChatFormatting.AQUA),
-                width / 2, 12, 0xFFFFFFFF);
+        //g.drawCenteredString(font, Component.literal(npcName).withStyle(ChatFormatting.AQUA), width / 2, 12, 0xFFFFFFFF);
+        MutableComponent header = Component.literal(npcName).withStyle(ChatFormatting.AQUA);
+        if (minecraft != null && minecraft.level != null && minecraft.level.getEntity(entityId) instanceof CompanionEntity c && c.isFollowing())
+        {
+            header.append(Component.literal(" · ").withStyle(ChatFormatting.GRAY)).append(Component.translatable("stcraft.chat.status.following").withStyle(ChatFormatting.GREEN));
+        }
+        g.drawCenteredString(font, header, width / 2, 12, 0xFFFFFFFF);
 
         int lh = font.lineHeight + 1;
         int contentH = 0;

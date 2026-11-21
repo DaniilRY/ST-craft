@@ -6,6 +6,7 @@ import com.murong.stcraft.tavern.ChatService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -30,6 +31,7 @@ public class CompanionEntity extends PathfinderMob
     private static final EntityDataAccessor<String> AVATAR = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> SKIN = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Boolean> SLIM = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> FOLLOWING = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
 
     private BlockPos home = BlockPos.ZERO;
 
@@ -37,6 +39,17 @@ public class CompanionEntity extends PathfinderMob
     public void setSkinSource(String s) { entityData.set(SKIN, s); }
     public boolean isSlim() { return entityData.get(SLIM); }
     public void setSlim(boolean slim) { entityData.set(SLIM, slim); }
+
+    private UUID followTarget;
+
+    public boolean isFollowing() { return entityData.get(FOLLOWING); }
+    public UUID getFollowTarget() { return followTarget; }
+
+    public void setFollowTarget(UUID id)
+    {
+        followTarget = id;
+        entityData.set(FOLLOWING, id != null);
+    }
 
     public CompanionEntity(EntityType<? extends CompanionEntity> type, Level level)
     {
@@ -86,6 +99,7 @@ public class CompanionEntity extends PathfinderMob
         builder.define(AVATAR, "");
         builder.define(SKIN, "");
         builder.define(SLIM, false);
+        builder.define(FOLLOWING, false);
     }
 
     public String getAvatar() { return entityData.get(AVATAR); }
@@ -114,14 +128,24 @@ public class CompanionEntity extends PathfinderMob
         tag.putLong("Home", home.asLong());
         tag.putString("Skin", getSkinSource());
         tag.putBoolean("Slim", isSlim());
+        if (followTarget != null) tag.putUUID("Follow", followTarget);
 
         CompoundTag chats = new CompoundTag();
-        for (var e : histories.entrySet()) {
+        for (var e : histories.entrySet())
+        {
             ListTag list = new ListTag();
-            for (ChatLine l : e.getValue()) {
+            for (ChatLine l : e.getValue())
+            {
                 CompoundTag t = new CompoundTag();
                 t.putInt("r", l.role());
                 t.putString("t", l.text());
+
+                if (!l.args().isEmpty())
+                {
+                    ListTag a = new ListTag();
+                    for (String s : l.args()) a.add(StringTag.valueOf(s));
+                    t.put("a", a);
+                }
                 list.add(t);
             }
             chats.put(e.getKey().toString(), list);
@@ -137,14 +161,20 @@ public class CompanionEntity extends PathfinderMob
         home = BlockPos.of(tag.getLong("Home"));
         entityData.set(SKIN, tag.getString("Skin"));
         entityData.set(SLIM, tag.getBoolean("Slim"));
+        setFollowTarget(tag.hasUUID("Follow") ? tag.getUUID("Follow") : null);
 
         histories.clear();
         CompoundTag chats = tag.getCompound("Chats");
-        for (String key : chats.getAllKeys()) {
+        for (String key : chats.getAllKeys())
+        {
             List<ChatLine> h = new ArrayList<>();
-            for (Tag t : chats.getList(key, Tag.TAG_COMPOUND)) {
+            for (Tag t : chats.getList(key, Tag.TAG_COMPOUND))
+            {
                 CompoundTag ct = (CompoundTag) t;
-                h.add(new ChatLine(ct.getInt("r"), ct.getString("t")));
+                ListTag a = ct.getList("a", Tag.TAG_STRING);
+                List<String> args = new ArrayList<>();
+                for (int i = 0; i < a.size(); i++) args.add(a.getString(i));
+                h.add(new ChatLine(ct.getInt("r"), ct.getString("t"), args));
             }
             histories.put(UUID.fromString(key), h);
         }
