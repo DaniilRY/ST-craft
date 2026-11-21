@@ -1,0 +1,13 @@
+{
+  "itemGroup.stcraft": "Example Mod Tab",
+  "block.stcraft.example_block": "Example Block",
+  "item.stcraft.example_item": "Example Item",
+
+  "stcraft.configuration.title": "ST Craft Configs",
+  "stcraft.configuration.section.stcraft.common.toml": "ST Craft Configs",
+  "stcraft.configuration.section.stcraft.common.toml.title": "ST Craft Configs",
+  "stcraft.configuration.items": "Item List",
+  "stcraft.configuration.logDirtBlock": "Log Dirt Block",
+  "stcraft.configuration.magicNumberIntroduction": "Magic Number Text",
+  "stcraft.configuration.magicNumber": "Magic Number"
+}
