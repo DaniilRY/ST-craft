@@ -2,14 +2,8 @@ package com.murong.stcraft;
 
 import com.murong.stcraft.client.ClientPayloads;
 import com.murong.stcraft.entity.CompanionEntity;
-import com.murong.stcraft.network.ChatReplyPayload;
-import com.murong.stcraft.network.ChatSendPayload;
-import com.murong.stcraft.network.OpenChatPayload;
-import com.murong.stcraft.network.SetSkinPayload;
-import com.murong.stcraft.tavern.ChatService;
-import com.murong.stcraft.tavern.PersonaCommands;
-import com.murong.stcraft.tavern.PersonaService;
-import com.murong.stcraft.tavern.TavernCommands;
+import com.murong.stcraft.network.*;
+import com.murong.stcraft.tavern.*;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
@@ -76,11 +70,13 @@ public class STCraft
             r.playToServer(ChatSendPayload.TYPE, ChatSendPayload.CODEC, ChatService::handleSend);
             r.playToClient(OpenChatPayload.TYPE, OpenChatPayload.CODEC, ClientPayloads::handleOpen);
             r.playToClient(ChatReplyPayload.TYPE, ChatReplyPayload.CODEC, ClientPayloads::handleReply);
+            r.playToClient(ChatDeltaPayload.TYPE, ChatDeltaPayload.CODEC, ClientPayloads::handleDelta);
         });
 
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent e) -> {
             TavernCommands.register(e.getDispatcher());
+            CharacterCommands.register(e.getDispatcher());
             PersonaCommands.register(e.getDispatcher());
         });
         NeoForge.EVENT_BUS.addListener((PlayerEvent.Clone e) -> {
@@ -104,15 +100,6 @@ public class STCraft
     private void commonSetup(FMLCommonSetupEvent event)
     {
         LOGGER.info("HELLO FROM COMMON SETUP");
-
-        if (Config.LOG_DIRT_BLOCK.getAsBoolean())
-        {
-            LOGGER.info("DIRT BLOCK >> {}", BuiltInRegistries.BLOCK.getKey(Blocks.DIRT));
-        }
-
-        LOGGER.info("{}{}", Config.MAGIC_NUMBER_INTRODUCTION.get(), Config.MAGIC_NUMBER.getAsInt());
-
-        Config.ITEM_STRINGS.get().forEach((item) -> LOGGER.info("ITEM >> {}", item));
     }
 
     @SubscribeEvent

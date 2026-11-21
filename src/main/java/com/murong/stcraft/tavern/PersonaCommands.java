@@ -30,15 +30,15 @@ public final class PersonaCommands {
         ServerPlayer self = src.getPlayer();
         boolean own = self != null && self.getUUID().equals(target.getUUID());
         if (own || src.hasPermission(2)) return true;
-        src.sendFailure(Component.literal("Менять персону другого игрока может только оператор"));
+        src.sendFailure(Component.translatable("stcraft.command.persona.denied"));
         return false;
     }
 
     private static int list(CommandSourceStack src) {
         TavernCommands.CLIENT.getSettings().whenComplete((st, err) -> src.getServer().execute(() -> {
-            if (err != null) { fail(src, err); return; }
+            if (err != null) { TavernCommands.fail(src, err); return; }
             String all = String.join(", ", st.personas().stream().map(Persona::name).toList());
-            src.sendSystemMessage(Component.literal("Персоны Таверны: " + all));
+            src.sendSystemMessage(Component.translatable("stcraft.command.persona.list", all));
         }));
         return 1;
     }
@@ -47,9 +47,10 @@ public final class PersonaCommands {
         String sel = PersonaService.selected(target);
         String nick = target.getGameProfile().getName();
         TavernCommands.CLIENT.getSettings().whenComplete((st, err) -> src.getServer().execute(() -> {
-            if (err != null) { fail(src, err); return; }
-            String current = st.persona(sel).map(Persona::name).orElse(nick + " (ник)");
-            src.sendSystemMessage(Component.literal("Персона игрока " + nick + ": " + current));
+            if (err != null) { TavernCommands.fail(src, err); return; }
+            Component current = st.persona(sel).<Component>map(p -> Component.literal(p.name()))
+                    .orElseGet(() -> Component.translatable("stcraft.command.persona.nick_suffix", nick));
+            src.sendSystemMessage(Component.translatable("stcraft.command.persona.show", nick, current));
         }));
         return 1;
     }
@@ -59,14 +60,15 @@ public final class PersonaCommands {
         String wanted = name.trim();
         String nick = target.getGameProfile().getName();
         TavernCommands.CLIENT.getSettings().whenComplete((st, err) -> src.getServer().execute(() -> {
-            if (err != null) { fail(src, err); return; }
+            if (err != null) { TavernCommands.fail(src, err); return; }
             var found = st.personas().stream().filter(p -> p.name().equalsIgnoreCase(wanted)).findFirst();
             if (found.isEmpty()) {
-                src.sendFailure(Component.literal("Нет персоны «" + wanted + "». Список: /persona list"));
+                src.sendFailure(Component.translatable("stcraft.command.persona.not_found", wanted));
                 return;
             }
             target.getPersistentData().putString(PersonaService.KEY, found.get().avatar());
-            src.sendSuccess(() -> Component.literal("Персона игрока " + nick + ": " + found.get().name()), false);
+            src.sendSuccess(() -> Component.translatable("stcraft.command.persona.set",
+                    nick, found.get().name()), false);
         }));
         return 1;
     }
@@ -75,12 +77,7 @@ public final class PersonaCommands {
         if (!allowed(src, target)) return 0;
         target.getPersistentData().remove(PersonaService.KEY);
         String nick = target.getGameProfile().getName();
-        src.sendSuccess(() -> Component.literal("Персона игрока " + nick + " сброшена на ник"), false);
+        src.sendSuccess(() -> Component.translatable("stcraft.command.persona.reset", nick), false);
         return 1;
-    }
-
-    private static void fail(CommandSourceStack src, Throwable t) {
-        while (t.getCause() != null) t = t.getCause();
-        src.sendFailure(Component.literal("Ошибка Таверны: " + t.getMessage()));
     }
 }

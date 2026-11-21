@@ -13,19 +13,22 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.ArrayList;
 import java.util.List;
 
-public class CompanionSkinScreen extends Screen {
+public class CompanionSkinScreen extends Screen
+{
     private final CompanionEntity companion;
     private final List<String> skins = new ArrayList<>();
     private int index;
     private boolean slim;
 
-    public CompanionSkinScreen(CompanionEntity companion) {
-        super(Component.literal("Скин: " + companion.getName().getString()));
+    public CompanionSkinScreen(CompanionEntity companion)
+    {
+        super(Component.translatable("stcraft.skin.title", companion.getName()));
         this.companion = companion;
     }
 
     @Override
-    protected void init() {
+    protected void init()
+    {
         skins.clear();
         skins.add("");
         skins.addAll(SkinCache.list());
@@ -37,20 +40,19 @@ public class CompanionSkinScreen extends Screen {
                 .bounds(cx - 100, 60, 20, 20).build());
         addRenderableWidget(Button.builder(Component.literal(">"), b -> shift(1))
                 .bounds(cx + 80, 60, 20, 20).build());
-        addRenderableWidget(CycleButton.booleanBuilder(
-                        Component.literal("Alex (тонкие руки)"), Component.literal("Steve (широкие руки)"))
+        addRenderableWidget(CycleButton.booleanBuilder(Component.translatable("stcraft.skin.model.slim"), Component.translatable("stcraft.skin.model.wide"))
                 .displayOnlyValue()
                 .withInitialValue(slim)
-                .create(cx - 100, 90, 200, 20, Component.literal("Модель"), (btn, v) -> slim = v));
-        addRenderableWidget(Button.builder(Component.literal("Открыть папку со скинами"),
+                .create(cx - 100, 90, 200, 20, Component.translatable("stcraft.skin.model"), (btn, v) -> slim = v));
+        addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.open_folder"),
                         b -> Util.getPlatform().openFile(SkinCache.DIR.toFile()))
                 .bounds(cx - 100, 120, 200, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Применить"), b -> {
+        addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.apply"), b -> {
             PacketDistributor.sendToServer(
                     new SetSkinPayload(companion.getId(), skins.get(index), slim));
             onClose();
         }).bounds(cx - 100, 150, 98, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Отмена"), b -> onClose())
+        addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.cancel"), b -> onClose())
                 .bounds(cx + 2, 150, 98, 20).build());
     }
 
@@ -59,10 +61,13 @@ public class CompanionSkinScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick)
+    {
         super.render(g, mouseX, mouseY, partialTick);
         g.drawCenteredString(font, title, width / 2, 25, 0xFFFFFF);
-        String label = skins.get(index).isEmpty() ? "по умолчанию" : skins.get(index);
+        Component label = skins.get(index).isEmpty()
+                ? Component.translatable("stcraft.skin.default")
+                : Component.literal(skins.get(index));
         g.drawCenteredString(font, label, width / 2, 66, 0xFFFFFF);
     }
 }
