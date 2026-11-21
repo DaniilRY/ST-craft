@@ -4,6 +4,7 @@ import com.murong.stcraft.Tuning;
 import com.murong.stcraft.entity.CompanionEntity;
 import com.murong.stcraft.network.ChatLine;
 import com.murong.stcraft.network.ChatSendPayload;
+import com.murong.stcraft.network.ChatStatePayload;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -33,6 +34,7 @@ public class CompanionChatScreen extends Screen {
     private int scrollPx;
     private EditBox input;
     private Button sendButton;
+    private int pingTimer;
 
     public CompanionChatScreen(int entityId, String name, String userName, List<ChatLine> history) {
         super(Component.literal(name));
@@ -64,6 +66,24 @@ public class CompanionChatScreen extends Screen {
         addRenderableWidget(Button.builder(Component.translatable("stcraft.chat.skin"), b -> openSkin())
                 .bounds(width - 60, 6, 50, 18).build());
         rebuild();
+
+        PacketDistributor.sendToServer(new ChatStatePayload(entityId, true));
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (++pingTimer >= 20) {
+            pingTimer = 0;
+            PacketDistributor.sendToServer(new ChatStatePayload(entityId, true));
+        }
+    }
+
+    @Override
+    public void removed() {
+        if (minecraft != null && minecraft.getConnection() != null) {
+            PacketDistributor.sendToServer(new ChatStatePayload(entityId, false));
+        }
     }
 
     private void openSkin() {
@@ -196,10 +216,17 @@ public class CompanionChatScreen extends Screen {
         int l = left(), r = l + panelW(), t = top(), b = bottom();
         g.fill(l, t, r, b, 0xB0101015);
         //g.drawCenteredString(font, Component.literal(npcName).withStyle(ChatFormatting.AQUA), width / 2, 12, 0xFFFFFFFF);
+
         MutableComponent header = Component.literal(npcName).withStyle(ChatFormatting.AQUA);
-        if (minecraft != null && minecraft.level != null && minecraft.level.getEntity(entityId) instanceof CompanionEntity c && c.isFollowing())
-        {
-            header.append(Component.literal(" · ").withStyle(ChatFormatting.GRAY)).append(Component.translatable("stcraft.chat.status.following").withStyle(ChatFormatting.GREEN));
+        if (minecraft != null && minecraft.level != null
+                && minecraft.level.getEntity(entityId) instanceof CompanionEntity c) {
+            if (c.isFollowing()) {
+                header.append(Component.literal(" · ").withStyle(ChatFormatting.GRAY))
+                        .append(Component.translatable("stcraft.chat.status.following").withStyle(ChatFormatting.GREEN));
+            } else if (c.isStaying()) {
+                header.append(Component.literal(" · ").withStyle(ChatFormatting.GRAY))
+                        .append(Component.translatable("stcraft.chat.status.staying").withStyle(ChatFormatting.YELLOW));
+            }
         }
         g.drawCenteredString(font, header, width / 2, 12, 0xFFFFFFFF);
 

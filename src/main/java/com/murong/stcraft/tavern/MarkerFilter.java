@@ -1,13 +1,14 @@
 package com.murong.stcraft.tavern;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /** Вырезает служебные метки из текста, в том числе когда они приходят кусками потока. */
 public final class MarkerFilter {
-    private static final List<String> MARKERS = List.of("[FOLLOW]", "[STAY]");
+    private static final List<String> MARKERS = List.of("[FOLLOW]", "[STAY]", "[FREE]", "[HOME]");
 
     private final StringBuilder pending = new StringBuilder();
-    private String found;
+    private final List<String> found = new ArrayList<>();
 
     /** Возвращает текст, который уже безопасно показывать. */
     public String accept(String chunk) {
@@ -24,7 +25,7 @@ public final class MarkerFilter {
             String rest = pending.substring(i);
             String full = fullMarker(rest);
             if (full != null) {
-                found = full;
+                found.add(full);
                 i += full.length();
             } else if (couldBePrefix(rest)) {
                 break; // возможно, метка ещё не дописана
@@ -45,7 +46,8 @@ public final class MarkerFilter {
     }
 
     /** Последняя найденная метка ("[FOLLOW]" или "[STAY]") или null. */
-    public String marker() { return found; }
+    public String marker() { return found.isEmpty() ? null : found.get(found.size() - 1); }
+    public List<String> markers() { return found; }
 
     private static String fullMarker(String rest) {
         for (String m : MARKERS) {

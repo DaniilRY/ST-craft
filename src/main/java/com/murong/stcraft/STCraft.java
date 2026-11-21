@@ -71,6 +71,7 @@ public class STCraft
             r.playToClient(OpenChatPayload.TYPE, OpenChatPayload.CODEC, ClientPayloads::handleOpen);
             r.playToClient(ChatReplyPayload.TYPE, ChatReplyPayload.CODEC, ClientPayloads::handleReply);
             r.playToClient(ChatDeltaPayload.TYPE, ChatDeltaPayload.CODEC, ClientPayloads::handleDelta);
+            r.playToServer(ChatStatePayload.TYPE, ChatStatePayload.CODEC, ChatService::handleState);
         });
 
         NeoForge.EVENT_BUS.register(this);

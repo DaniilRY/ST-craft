@@ -22,6 +22,7 @@ public final class ChatService
     private ChatService() {}
 
     private static final Pattern STOP = Pattern.compile("(?iu)(?<!\\p{L})(стой|стоять|останься|оставайся|жди|подожди|ждать|stay|stop|wait)(?!\\p{L})");
+    private static final Pattern RELEASE = Pattern.compile("(?iu)(?<!\\p{L})(свободен|свободна|гуляй|иди гулять|иди домой|можешь гулять|go home|you are free|you're free)(?!\\p{L})");
 
     private record Ctx(TavernCharacter ch, TavernClient.Settings st) {}
 
@@ -71,13 +72,20 @@ public final class ChatService
             c.addHistory(id, mine);
             c.setBusy(true);
 
-            if (c.isFollowing() && STOP.matcher(text).find())
+            if (!c.isStaying() && STOP.matcher(text).find())
             {
-                c.setFollowTarget(null);
-                note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.now_staying", List.of(c.getName().getString())));
+                c.stay();
+                note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.now_staying",
+                        List.of(c.getName().getString())));
             }
+            else if (!c.isFree() && RELEASE.matcher(text).find())
+            {
+                c.release();
+                note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.now_free",
+                        List.of(c.getName().getString())));
+            }
+            int mode = c.getMode();
 
-            boolean following = c.isFollowing();
             List<ChatLine> snapshot = List.copyOf(c.history(id));
 
             StringBuffer raw = new StringBuffer();
@@ -95,7 +103,7 @@ public final class ChatService
                     .thenCompose(x -> {
                         Persona pe = PersonaService.pick(x.st(), sel, nick);
                         return TavernCommands.CLIENT.generate(
-                                buildMessages(x.ch(), x.st(), pe, snapshot, following),
+                                buildMessages(x.ch(), x.st(), pe, snapshot, mode),
                                 x.ch().name(), pe.name(), x.st(), stream, onDelta);
                     })
                     .whenComplete((reply, err) -> sp.getServer().execute(() -> {
@@ -115,23 +123,42 @@ public final class ChatService
                         else if (out.isEmpty() && f.marker() == null) {
                             tell(sp, c, new ChatLine(ChatLine.ERROR, "stcraft.chat.empty_reply"));
                         }
-                        applyMarker(sp, c, f.marker());
+                        for (String m : f.markers()) applyMarker(sp, c, m);
                     }));
         });
     }
 
-    private static void applyMarker(ServerPlayer sp, CompanionEntity c, String marker)
-    {
+    public static void handleState(ChatStatePayload p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            if (ctx.player() instanceof ServerPlayer sp
+                    && sp.level().getEntity(p.entityId()) instanceof CompanionEntity c
+                    && c.distanceToSqr(sp) <= 100) {
+                c.setTalking(p.open());
+            }
+        });
+    }
+
+    private static void applyMarker(ServerPlayer sp, CompanionEntity c, String marker) {
         if (marker == null) return;
         List<String> name = List.of(c.getName().getString());
-        if (marker.equals("[FOLLOW]") && !sp.getUUID().equals(c.getFollowTarget()))
-        {
-            c.setFollowTarget(sp.getUUID());
-            note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.now_following", name));
-        } else if (marker.equals("[STAY]") && c.isFollowing())
-        {
-            c.setFollowTarget(null);
-            note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.now_staying", name));
+        if (marker.equals("[FOLLOW]")) {
+            if (!(c.isFollowing() && sp.getUUID().equals(c.getFollowTarget()))) {
+                c.follow(sp.getUUID());
+                note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.now_following", name));
+            }
+        } else if (marker.equals("[STAY]")) {
+            if (!c.isStaying()) {
+                c.stay();
+                note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.now_staying", name));
+            }
+        } else if (marker.equals("[FREE]")) {
+            if (!c.isFree()) {
+                c.release();
+                note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.now_free", name));
+            }
+        } else if (marker.equals("[HOME]")) {
+            c.setHome(c.blockPosition());
+            note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.home_set", name));
         }
     }
 
@@ -141,7 +168,7 @@ public final class ChatService
         return new ChatLine(ChatLine.ERROR, te.key(), te.args());
     }
 
-    private static JsonArray buildMessages(TavernCharacter ch, TavernClient.Settings st, Persona pe, List<ChatLine> history, boolean following)
+    private static JsonArray buildMessages(TavernCharacter ch, TavernClient.Settings st, Persona pe, List<ChatLine> history, int mode)
     {
         String user = pe.name();
         JsonArray arr = new JsonArray();
@@ -155,7 +182,12 @@ public final class ChatService
         if (!card.isEmpty()) arr.add(msg("system", mac(card.toString().trim(), ch.name(), user)));
 
         arr.add(msg("system", mac(Tuning.CHAT_HINT, ch.name(), user)));
-        arr.add(msg("system", mac(Tuning.MARKER_HINT + " " + (following ? Tuning.STATE_FOLLOWING : Tuning.STATE_STAYING), ch.name(), user)));
+        String state = switch (mode) {
+            case CompanionEntity.FOLLOW -> Tuning.STATE_FOLLOWING;
+            case CompanionEntity.STAY -> Tuning.STATE_STAYING;
+            default -> Tuning.STATE_FREE;
+        };
+        arr.add(msg("system", mac(Tuning.MARKER_HINT + " " + state, ch.name(), user)));
         arr.add(msg("system", st.newChatPrompt()));
 
         List<ChatLine> talk = history.stream().filter(l -> l.role() == ChatLine.PLAYER || l.role() == ChatLine.COMPANION).toList();
