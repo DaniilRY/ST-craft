@@ -42,6 +42,8 @@ public class CompanionEntity extends PathfinderMob
     private static final EntityDataAccessor<String> AVATAR = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> SKIN = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Boolean> SLIM = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> CHILD = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+
     private static final EntityDataAccessor<Integer> MODE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     public static final TicketType<ChunkPos> TICKET = TicketType.create("stcraft_companion", Comparator.comparingLong(ChunkPos::toLong), 40);
 
@@ -55,6 +57,10 @@ public class CompanionEntity extends PathfinderMob
     public void setSkinSource(String s) { entityData.set(SKIN, s); }
     public boolean isSlim() { return entityData.get(SLIM); }
     public void setSlim(boolean slim) { entityData.set(SLIM, slim); }
+    public void setChild(boolean child) { entityData.set(CHILD, child); }
+
+    @Override
+    public boolean isBaby() { return entityData.get(CHILD); }
 
     private UUID followTarget;
 
@@ -136,6 +142,7 @@ public class CompanionEntity extends PathfinderMob
         builder.define(AVATAR, "");
         builder.define(SKIN, "");
         builder.define(SLIM, false);
+        builder.define(CHILD, false);
         builder.define(MODE, FREE);
     }
 
@@ -166,6 +173,7 @@ public class CompanionEntity extends PathfinderMob
         tag.putLong("Home", home.asLong());
         tag.putString("Skin", getSkinSource());
         tag.putBoolean("Slim", isSlim());
+        tag.putBoolean("Child", isBaby());
         tag.putInt("Mode", getMode());
         if (homeDim != null) tag.putString("HomeDim", homeDim.toString());
         if (followTarget != null) tag.putUUID("Follow", followTarget);
@@ -201,6 +209,7 @@ public class CompanionEntity extends PathfinderMob
         home = BlockPos.of(tag.getLong("Home"));
         entityData.set(SKIN, tag.getString("Skin"));
         entityData.set(SLIM, tag.getBoolean("Slim"));
+        entityData.set(CHILD, tag.getBoolean("Child"));
 
         followTarget = tag.hasUUID("Follow") ? tag.getUUID("Follow") : null;
         entityData.set(MODE, tag.contains("Mode") ? tag.getInt("Mode") : (followTarget != null ? FOLLOW : FREE));
@@ -321,5 +330,12 @@ public class CompanionEntity extends PathfinderMob
         BlockPos below = BlockPos.containing(x, y, z).below();
         if (!lvl.getBlockState(below).isFaceSturdy(lvl, below, Direction.UP)) return false;
         return lvl.noCollision(this, getDimensions(getPose()).makeBoundingBox(x, y, z));
+    }
+
+    @Override
+    public void onSyncedDataUpdated(EntityDataAccessor<?> key)
+    {
+        if (CHILD.equals(key)) refreshDimensions();
+        super.onSyncedDataUpdated(key);
     }
 }

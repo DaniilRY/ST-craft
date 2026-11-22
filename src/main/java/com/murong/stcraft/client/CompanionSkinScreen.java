@@ -19,6 +19,7 @@ public class CompanionSkinScreen extends Screen
     private final List<String> skins = new ArrayList<>();
     private int index;
     private boolean slim;
+    private boolean child;
 
     public CompanionSkinScreen(CompanionEntity companion)
     {
@@ -34,26 +35,20 @@ public class CompanionSkinScreen extends Screen
         skins.addAll(SkinCache.list());
         index = Math.max(0, skins.indexOf(companion.getSkinSource()));
         slim = companion.isSlim();
+        child = companion.isBaby();
 
         int cx = width / 2;
-        addRenderableWidget(Button.builder(Component.literal("<"), b -> shift(-1))
-                .bounds(cx - 100, 60, 20, 20).build());
-        addRenderableWidget(Button.builder(Component.literal(">"), b -> shift(1))
-                .bounds(cx + 80, 60, 20, 20).build());
-        addRenderableWidget(CycleButton.booleanBuilder(Component.translatable("stcraft.skin.model.slim"), Component.translatable("stcraft.skin.model.wide"))
-                .displayOnlyValue()
-                .withInitialValue(slim)
-                .create(cx - 100, 90, 200, 20, Component.translatable("stcraft.skin.model"), (btn, v) -> slim = v));
-        addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.open_folder"),
-                        b -> Util.getPlatform().openFile(SkinCache.DIR.toFile()))
-                .bounds(cx - 100, 120, 200, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("<"), b -> shift(-1)).bounds(cx - 100, 60, 20, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(">"), b -> shift(1)).bounds(cx + 80, 60, 20, 20).build());
+        addRenderableWidget(CycleButton.booleanBuilder(Component.translatable("stcraft.skin.model.slim"), Component.translatable("stcraft.skin.model.wide")).displayOnlyValue().withInitialValue(slim).create(cx - 100, 90, 200, 20, Component.translatable("stcraft.skin.model"), (btn, v) -> slim = v));
+        addRenderableWidget(CycleButton.onOffBuilder(child).create(cx - 100, 120, 200, 20, Component.translatable("stcraft.skin.child"), (btn, v) -> child = v));
+        addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.open_folder"), b -> Util.getPlatform().openFile(SkinCache.DIR.toFile())).bounds(cx - 100, 150, 200, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.apply"), b -> {
             PacketDistributor.sendToServer(
-                    new SetSkinPayload(companion.getId(), skins.get(index), slim));
+                    new SetSkinPayload(companion.getId(), skins.get(index), slim, child));
             onClose();
-        }).bounds(cx - 100, 150, 98, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.cancel"), b -> onClose())
-                .bounds(cx + 2, 150, 98, 20).build());
+        }).bounds(cx - 100, 180, 98, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.cancel"), b -> onClose()).bounds(cx + 2, 180, 98, 20).build());
     }
 
     private void shift(int d) {

@@ -10,7 +10,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-public record SetSkinPayload(int entityId, String skin, boolean slim) implements CustomPacketPayload
+public record SetSkinPayload(int entityId, String skin, boolean slim, boolean child) implements CustomPacketPayload
 {
     public static final Type<SetSkinPayload> TYPE = new Type<>(STCraft.id("set_skin"));
 
@@ -18,6 +18,7 @@ public record SetSkinPayload(int entityId, String skin, boolean slim) implements
             ByteBufCodecs.VAR_INT, SetSkinPayload::entityId,
             ByteBufCodecs.STRING_UTF8, SetSkinPayload::skin,
             ByteBufCodecs.BOOL, SetSkinPayload::slim,
+            ByteBufCodecs.BOOL, SetSkinPayload::child,
             SetSkinPayload::new);
 
     @Override
@@ -27,6 +28,7 @@ public record SetSkinPayload(int entityId, String skin, boolean slim) implements
     {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer player)) return;
+            if (!player.isCreative()) return;
             Entity e = player.level().getEntity(p.entityId());
             if (!(e instanceof CompanionEntity c) || c.distanceToSqr(player) > 64) return;
             String s = p.skin();
@@ -34,6 +36,7 @@ public record SetSkinPayload(int entityId, String skin, boolean slim) implements
                     || s.contains("/") || s.contains("\\") || s.contains(".."))) return;
             c.setSkinSource(s);
             c.setSlim(p.slim());
+            c.setChild(p.child());
         });
     }
 }

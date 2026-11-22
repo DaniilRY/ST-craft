@@ -31,7 +31,7 @@ public class Config
         BUILDER.pop();
 
         BUILDER.push("character");
-        TELEPORT_HOME = BUILDER.comment("A released companion teleports home when he is too far from it").define("teleportHomeOnRelease", true);
+        TELEPORT_HOME = BUILDER.comment("A released companion teleports home when he is too far from it").define("teleportHomeOnRelease", false);
         HOME_TELEPORT_DISTANCE = BUILDER.comment("Distance from home (blocks) after which a free companion teleports home").defineInRange("homeTeleportDistance", 24.0, 4.0, 256.0);
         BUILDER.pop();
 
