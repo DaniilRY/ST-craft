@@ -5,6 +5,7 @@ import com.murong.stcraft.network.ChatLine;
 import com.murong.stcraft.tavern.ChatService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -22,12 +23,19 @@ import net.minecraft.server.level.TicketType;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.*;
 import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ArmorItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ProjectileWeaponItem;
+import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -113,12 +121,13 @@ public class CompanionEntity extends PathfinderMob
     protected void registerGoals() {
         goalSelector.addGoal(0, new FloatGoal(this));
         goalSelector.addGoal(1, new CompanionGoals.Talk(this));
-        goalSelector.addGoal(2, new CompanionGoals.Follow(this));
-        goalSelector.addGoal(3, new OpenDoorGoal(this, true));
-        goalSelector.addGoal(4, new CompanionGoals.ReturnHome(this, 1.0));
-        goalSelector.addGoal(5, new CompanionGoals.Stroll(this, 0.8));
-        goalSelector.addGoal(6, new LookAtPlayerGoal(this, Player.class, 8.0F));
-        goalSelector.addGoal(7, new RandomLookAroundGoal(this));
+        goalSelector.addGoal(2, new CompanionGoals.Fetch(this));
+        goalSelector.addGoal(3, new CompanionGoals.Follow(this));
+        goalSelector.addGoal(4, new OpenDoorGoal(this, true));
+        goalSelector.addGoal(5, new CompanionGoals.ReturnHome(this, 1.0));
+        goalSelector.addGoal(6, new CompanionGoals.Stroll(this, 0.8));
+        goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 8.0F));
+        goalSelector.addGoal(8, new RandomLookAroundGoal(this));
     }
     private final Map<UUID, List<ChatLine>> histories = new HashMap<>();
     private boolean busy;
@@ -234,15 +243,19 @@ public class CompanionEntity extends PathfinderMob
 
     @Override
     protected InteractionResult mobInteract(Player player, InteractionHand hand) {
-        if (player.getItemInHand(hand).isEmpty() && !player.isShiftKeyDown()) {
-            if (!level().isClientSide && player instanceof ServerPlayer sp) {
-                ChatService.open(sp, this);
+        if (player.getItemInHand(hand).isEmpty()) {
+            if (player.isShiftKeyDown()) {
+                if (canEdit(player)) {
+                    if (!level().isClientSide) takeAll(player);
+                    return InteractionResult.sidedSuccess(level().isClientSide);
+                }
+            } else {
+                if (!level().isClientSide && player instanceof ServerPlayer sp) ChatService.open(sp, this);
+                return InteractionResult.sidedSuccess(level().isClientSide);
             }
-            return InteractionResult.sidedSuccess(level().isClientSide);
         }
         return super.mobInteract(player, hand);
     }
-
     public void setHome(BlockPos pos)
     {
         home = pos;
@@ -265,6 +278,7 @@ public class CompanionEntity extends PathfinderMob
         if (talkTicks > 0) talkTicks--;
         if (tickCount % 20 == 0) updateRestriction();
         if (tickCount % 10 == 0) modeTick();
+        if (tickCount % 5 == 0) scanForGifts();
     }
 
     /** Идёт за игроком: гуляет только возле дома; следует: ограничение снято. */
@@ -337,5 +351,141 @@ public class CompanionEntity extends PathfinderMob
     {
         if (CHILD.equals(key)) refreshDimensions();
         super.onSyncedDataUpdated(key);
+    }
+
+    public static boolean canEdit(Player p)
+    {
+        return p.isCreative() || p.hasPermissions(2);
+    }
+
+    public static EquipmentSlot slotFor(ItemStack s)
+    {
+        if (s.isEmpty()) return null;
+        if (s.getItem() instanceof ArmorItem a) return a.getEquipmentSlot();
+        if (s.getItem() instanceof ShieldItem) return EquipmentSlot.OFFHAND;
+        if (isWeapon(s)) return EquipmentSlot.MAINHAND;
+        return null;
+    }
+
+    private static boolean isWeapon(ItemStack s)
+    {
+        if (s.getItem() instanceof ProjectileWeaponItem) return true;
+        for (var e : s.getAttributeModifiers().modifiers())
+        {
+            if (e.attribute().is(Attributes.ATTACK_DAMAGE) && e.slot() == EquipmentSlotGroup.MAINHAND) return true;
+        }
+        return false;
+    }
+
+    private boolean isGift(ItemEntity ie)
+    {
+        return !ie.isRemoved() && ie.getOwner() instanceof Player && slotFor(ie.getItem()) != null;
+    }
+
+    public ItemEntity findGift(double range)
+    {
+        ItemEntity best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (ItemEntity ie : level().getEntitiesOfClass(ItemEntity.class, getBoundingBox().inflate(range, 2, range)))
+        {
+            if (!isGift(ie)) continue;
+            double d = distanceToSqr(ie);
+            if (d < bestDist) { bestDist = d; best = ie; }
+        }
+        return best;
+    }
+
+    private void scanForGifts()
+    {
+        if (isDeadOrDying()) return;
+        for (ItemEntity ie : level().getEntitiesOfClass(ItemEntity.class, getBoundingBox().inflate(1.5, 0.5, 1.5))) {
+            if (ie.hasPickUpDelay() || !isGift(ie)) continue;
+            if (receive(ie, (Player) ie.getOwner())) return; // по одной вещи за проход
+        }
+    }
+
+    private boolean receive(ItemEntity ie, Player giver) {
+        ItemStack stack = ie.getItem();
+        EquipmentSlot slot = slotFor(stack);
+        if (slot == null) return false;
+
+        ItemStack one = stack.copyWithCount(1);
+        ItemStack old = getItemBySlot(slot).copy();
+        stack.shrink(1);
+        if (stack.isEmpty()) ie.discard();
+
+        setItemSlot(slot, one);
+        setDropChance(slot, 1.0F); // при смерти выпадает всё, что дал игрок
+        if (giver instanceof ServerPlayer sp) {
+            sp.displayClientMessage(Component.translatable("stcraft.msg.equip", getName(), one.getHoverName()), true);
+        }
+        if (!old.isEmpty()) {
+            dropToward(old, giver);
+            if (giver instanceof ServerPlayer sp) {
+                sp.displayClientMessage(Component.translatable("stcraft.msg.return", getName(), old.getHoverName()), false);
+            }
+        }
+        return true;
+    }
+
+    private void dropToward(ItemStack stack, Player to) {
+        ItemEntity drop = new ItemEntity(level(), getX(), getEyeY() - 0.3, getZ(), stack);
+        Vec3 dir = to.position().subtract(position());
+        dir = dir.lengthSqr() < 1.0E-4 ? Vec3.ZERO : dir.normalize().scale(0.25);
+        drop.setDeltaMovement(dir.x, 0.2, dir.z);
+        drop.setPickUpDelay(20);
+        level().addFreshEntity(drop);
+    }
+
+    /** Креатив и операторы: Shift+ПКМ пустой рукой. */
+    private void takeAll(Player player) {
+        boolean any = false;
+        for (EquipmentSlot s : EquipmentSlot.values()) {
+            ItemStack st = getItemBySlot(s);
+            if (st.isEmpty()) continue;
+            ItemStack out = st.copy();
+            setItemSlot(s, ItemStack.EMPTY);
+            if (!player.getInventory().add(out)) player.drop(out, false);
+            any = true;
+        }
+        if (any) player.displayClientMessage(Component.translatable("stcraft.msg.took_all", getName()), true);
+    }
+
+    /** Просьба из чата: [GIVE:id]. */
+    public boolean giveItem(ServerPlayer to, String id) {
+        ResourceLocation rl = ResourceLocation.tryParse(id);
+        if (rl == null) return false;
+        for (EquipmentSlot s : EquipmentSlot.values()) {
+            ItemStack st = getItemBySlot(s);
+            if (!st.isEmpty() && BuiltInRegistries.ITEM.getKey(st.getItem()).equals(rl)) {
+                ItemStack out = st.copy();
+                setItemSlot(s, ItemStack.EMPTY);
+                dropToward(out, to);
+                to.displayClientMessage(Component.translatable("stcraft.msg.return", getName(), out.getHoverName()), false);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Что на нём и в руках, для запроса к модели. */
+    public String describeGear() {
+        StringBuilder sb = new StringBuilder();
+        for (EquipmentSlot s : EquipmentSlot.values()) {
+            ItemStack st = getItemBySlot(s);
+            if (st.isEmpty()) continue;
+            String label = switch (s) {
+                case HEAD -> "head";
+                case CHEST -> "chest";
+                case LEGS -> "legs";
+                case FEET -> "feet";
+                case MAINHAND -> "right hand";
+                case OFFHAND -> "left hand";
+                default -> s.getName();
+            };
+            sb.append(label).append(": ").append(BuiltInRegistries.ITEM.getKey(st.getItem()))
+                    .append(" (").append(st.getHoverName().getString()).append("); ");
+        }
+        return sb.isEmpty() ? "nothing" : sb.toString().trim();
     }
 }

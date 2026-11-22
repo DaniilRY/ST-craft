@@ -40,5 +40,8 @@
   "stcraft.command.persona.set": "Персона игрока %s: %s",
   "stcraft.command.persona.not_found": "Нет персоны «%s». Список: /persona list",
   "stcraft.command.persona.reset": "Персона игрока %s сброшена на ник",
-  "stcraft.command.persona.denied": "Менять персону другого игрока может только оператор"
+  "stcraft.command.persona.denied": "Менять персону другого игрока может только оператор",
+  "stcraft.msg.equip": "%s экипировал: %s",
+  "stcraft.msg.return": "%s возвращает: %s",
+  "stcraft.msg.took_all": "Вы забрали всё снаряжение у %s"
 }

@@ -4,6 +4,7 @@ import com.murong.stcraft.Config;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 
 import java.util.EnumSet;
@@ -109,5 +110,47 @@ public final class CompanionGoals {
         }
 
         @Override public boolean canUse() { return c.isFree() && !c.isTalking() && super.canUse(); }
+    }
+
+    /** Подходит к вещи, которую бросил игрок (режимы FREE и FOLLOW; в STAY стоит на месте). */
+    public static class Fetch extends Goal {
+        private final CompanionEntity c;
+        private ItemEntity target;
+        private int recalc;
+
+        public Fetch(CompanionEntity c) {
+            this.c = c;
+            setFlags(EnumSet.of(Flag.MOVE));
+        }
+
+        @Override
+        public boolean canUse() {
+            double range = GIFT_RANGE;
+            if (range <= 0 || c.isStaying() || c.isTalking()) return false;
+            target = c.findGift(range);
+            return target != null;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return target != null && !target.isRemoved() && !c.isStaying() && !c.isTalking()
+                    && c.distanceToSqr(target) < sq(GIFT_RANGE + 2);
+        }
+
+        @Override public void start() { recalc = 0; }
+
+        @Override
+        public void stop() {
+            target = null;
+            c.getNavigation().stop();
+        }
+
+        @Override
+        public void tick() {
+            if (--recalc <= 0) {
+                recalc = adjustedTickDelay(10);
+                c.getNavigation().moveTo(target, 1.1);
+            }
+        }
     }
 }

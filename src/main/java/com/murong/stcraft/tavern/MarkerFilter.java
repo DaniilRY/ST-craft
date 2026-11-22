@@ -45,10 +45,31 @@ public final class MarkerFilter {
         return s;
     }
 
-    /** Последняя найденная метка ("[FOLLOW]" или "[STAY]") или null. */
     public String marker() { return found.isEmpty() ? null : found.get(found.size() - 1); }
     public List<String> markers() { return found; }
 
+    private static final String GIVE = "[GIVE:";
+
+    private static String fullMarker(String rest) {
+        for (String m : MARKERS) {
+            if (rest.length() >= m.length() && rest.regionMatches(true, 0, m, 0, m.length())) return m;
+        }
+        if (rest.regionMatches(true, 0, GIVE, 0, GIVE.length())) {
+            int end = rest.indexOf(']');
+            if (end > 0 && end <= 80) return rest.substring(0, end + 1);
+        }
+        return null;
+    }
+
+    private static boolean couldBePrefix(String rest) {
+        for (String m : MARKERS) {
+            if (rest.length() < m.length() && m.regionMatches(true, 0, rest, 0, rest.length())) return true;
+        }
+        if (rest.length() < GIVE.length()) return GIVE.regionMatches(true, 0, rest, 0, rest.length());
+        return rest.regionMatches(true, 0, GIVE, 0, GIVE.length()) && rest.indexOf(']') < 0 && rest.length() <= 80;
+    }
+
+    /** Последняя найденная метка ("[FOLLOW]" или "[STAY]") или null.
     private static String fullMarker(String rest) {
         for (String m : MARKERS) {
             if (rest.length() >= m.length() && rest.regionMatches(true, 0, m, 0, m.length())) return m;
@@ -61,5 +82,5 @@ public final class MarkerFilter {
             if (rest.length() < m.length() && m.regionMatches(true, 0, rest, 0, rest.length())) return true;
         }
         return false;
-    }
+    }*/
 }

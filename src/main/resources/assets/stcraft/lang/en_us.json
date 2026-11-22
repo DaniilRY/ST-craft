@@ -39,5 +39,8 @@
   "stcraft.command.persona.set": "Persona of %s: %s",
   "stcraft.command.persona.not_found": "No persona \"%s\". See /persona list",
   "stcraft.command.persona.reset": "Persona of %s reset to nickname",
-  "stcraft.command.persona.denied": "Only operators can change another player's persona"
+  "stcraft.command.persona.denied": "Only operators can change another player's persona",
+  "stcraft.msg.equip": "%s equipped: %s",
+  "stcraft.msg.return": "%s hands back: %s",
+  "stcraft.msg.took_all": "You took all gear from %s"
 }

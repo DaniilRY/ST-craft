@@ -86,6 +86,7 @@ public final class ChatService
             }
             int mode = c.getMode();
 
+            String gear = c.describeGear();
             List<ChatLine> snapshot = List.copyOf(c.history(id));
 
             StringBuffer raw = new StringBuffer();
@@ -103,7 +104,7 @@ public final class ChatService
                     .thenCompose(x -> {
                         Persona pe = PersonaService.pick(x.st(), sel, nick);
                         return TavernCommands.CLIENT.generate(
-                                buildMessages(x.ch(), x.st(), pe, snapshot, mode),
+                                buildMessages(x.ch(), x.st(), pe, snapshot, mode, gear),
                                 x.ch().name(), pe.name(), x.st(), stream, onDelta);
                     })
                     .whenComplete((reply, err) -> sp.getServer().execute(() -> {
@@ -159,6 +160,8 @@ public final class ChatService
         } else if (marker.equals("[HOME]")) {
             c.setHome(c.blockPosition());
             note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.home_set", name));
+        } else if (marker.regionMatches(true, 0, "[GIVE:", 0, 6)) {
+            c.giveItem(sp, marker.substring(6, marker.length() - 1).trim());
         }
     }
 
@@ -168,7 +171,7 @@ public final class ChatService
         return new ChatLine(ChatLine.ERROR, te.key(), te.args());
     }
 
-    private static JsonArray buildMessages(TavernCharacter ch, TavernClient.Settings st, Persona pe, List<ChatLine> history, int mode)
+    private static JsonArray buildMessages(TavernCharacter ch, TavernClient.Settings st, Persona pe, List<ChatLine> history, int mode, String gear)
     {
         String user = pe.name();
         JsonArray arr = new JsonArray();
@@ -187,7 +190,8 @@ public final class ChatService
             case CompanionEntity.STAY -> Tuning.STATE_STAYING;
             default -> Tuning.STATE_FREE;
         };
-        arr.add(msg("system", mac(Tuning.MARKER_HINT + " " + state, ch.name(), user)));
+        //arr.add(msg("system", mac(Tuning.MARKER_HINT + " " + state, ch.name(), user)));
+        arr.add(msg("system", mac(Tuning.MARKER_HINT + " " + state + " Your gear: " + gear + ".", ch.name(), user)));
         arr.add(msg("system", st.newChatPrompt()));
 
         List<ChatLine> talk = history.stream().filter(l -> l.role() == ChatLine.PLAYER || l.role() == ChatLine.COMPANION).toList();

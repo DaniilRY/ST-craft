@@ -62,8 +62,11 @@ public class CompanionChatScreen extends Screen {
         setInitialFocus(input);
         sendButton = addRenderableWidget(Button.builder(Component.translatable("stcraft.chat.send"), b -> send()).bounds(l + w - 70, height - 28, 70, 20).build());
         sendButton.active = !waiting;
-        if (minecraft != null && minecraft.player != null && minecraft.player.isCreative()) {
-            addRenderableWidget(Button.builder(Component.translatable("stcraft.chat.settings"), b -> openSkin()).bounds(width - 80, 6, 70, 18).build());
+        if (minecraft != null && minecraft.player != null) {
+            if (minecraft.player.isCreative() || minecraft.player.hasPermissions(2))
+            {
+                addRenderableWidget(Button.builder(Component.translatable("stcraft.chat.settings"), b -> openSkin()).bounds(width - 80, 6, 70, 18).build());
+            }
         }
         rebuild();
 
