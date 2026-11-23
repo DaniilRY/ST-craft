@@ -13,6 +13,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -22,7 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class CompanionChatScreen extends Screen {
-    private static final int PAD = 6, GAP = 6;
+    private static final int PAD = 10, GAP = 6;
 
     private record Block(List<FormattedCharSequence> lines) {}
 
@@ -56,17 +57,20 @@ public class CompanionChatScreen extends Screen {
     protected void init() {
         String keep = input == null ? "" : input.getValue();
         int l = left(), w = panelW();
-        input = new EditBox(font, l, height - 28, w - 74, 20, Component.empty());
+        input = new EditBox(font, l, height - 28, w - 24, 20, Component.empty());
         input.setMaxLength(Tuning.CHAT_INPUT_MAX);
         input.setValue(keep);
         addRenderableWidget(input);
         setInitialFocus(input);
-        sendButton = addRenderableWidget(Button.builder(Component.translatable("stcraft.chat.send"), b -> send()).bounds(l + w - 70, height - 28, 70, 20).build());
+
+        //sendButton = addRenderableWidget(Button.builder(Component.translatable("stcraft.chat.send"), b -> send()).bounds(l + w - 70, height - 28, 70, 20).build());
+        sendButton = addRenderableWidget(new IconButton(l + w - 20, height - 28, 20, Component.translatable("stcraft.chat.send"), b -> send(), IconButton.ARROW_UP));
         sendButton.active = !waiting;
         if (minecraft != null && minecraft.player != null) {
             if (minecraft.player.isCreative() || minecraft.player.hasPermissions(2))
             {
-                addRenderableWidget(Button.builder(Component.translatable("stcraft.chat.settings"), b -> openSkin()).bounds(width - 80, 6, 70, 18).build());
+                //addRenderableWidget(Button.builder(Component.translatable("stcraft.chat.settings"), b -> openSkin()).bounds(width - 80, 6, 70, 18).build());
+                addRenderableWidget(new IconButton(l + w - 20, 4, 20, Component.translatable("stcraft.chat.settings"), b -> openSkin(), IconButton.sprite(ResourceLocation.withDefaultNamespace("icon/accessibility"))));
             }
         }
         rebuild();

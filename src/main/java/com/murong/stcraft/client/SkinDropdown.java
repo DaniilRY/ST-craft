@@ -61,7 +61,8 @@ public class SkinDropdown extends AbstractWidget {
         String text = font.plainSubstrByWidth(labelOf.apply(items.get(selected)), getWidth() - 20);
         int ty = getY() + (getHeight() - 8) / 2;
         g.drawString(font, text, getX() + 6, ty, 0xFFFFFF);
-        g.drawString(font, open ? "^" : "v", getX() + getWidth() - 12, ty, 0xFFFFFF);
+        //g.drawString(font, open ? "^" : "v", getX() + getWidth() - 12, ty, 0xFFFFFF);
+        g.drawString(font, open ? "▲" : "▼", getX() + getWidth() - 12, ty, 0xFFFFFF);
         if (!open) return;
 
         g.pose().pushPose();
