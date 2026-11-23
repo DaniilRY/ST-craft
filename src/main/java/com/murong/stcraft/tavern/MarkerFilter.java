@@ -5,7 +5,7 @@ import java.util.List;
 
 /** Вырезает служебные метки из текста, в том числе когда они приходят кусками потока. */
 public final class MarkerFilter {
-    private static final List<String> MARKERS = List.of("[FOLLOW]", "[STAY]", "[FREE]", "[HOME]");
+    private static final List<String> MARKERS = List.of("[FOLLOW]", "[STAY]", "[FREE]", "[HOME]", "[GOHOME]");
 
     private final StringBuilder pending = new StringBuilder();
     private final List<String> found = new ArrayList<>();

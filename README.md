@@ -1,26 +1,32 @@
+# ST Craft
 
-Installation information
-=======
+Персонажи из SillyTavern оживают в Minecraft 1.21.1 (NeoForge). Карточки персонажей становятся мобами, которые разговаривают, ходят за игроком, сражаются и носят снаряжение. Все запросы идут через локальную Таверну: мод читает из неё источник, модель, параметры и персоны, поэтому ключи доступа ему не нужны, а смена модели действует сразу.
 
-This template repository can be directly cloned to get you started with a new
-mod. Simply create a new repository cloned from this one, by following the
-instructions provided by [GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
+Нужны Minecraft 1.21.1, NeoForge 21.1.x, Java 21 и запущенная Таверна с настроенным Chat Completion (адрес по умолчанию `http://127.0.0.1:8000`).
 
-Once you have your clone, simply open the repository in the IDE of your choice. The usual recommendation for an IDE is either IntelliJ IDEA or Eclipse.
+## Команды
 
-If at any point you are missing libraries in your IDE, or you've run into problems you can
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-{this does not affect your code} and then start the process again.
+Команды `/tavern` и `/character` только для операторов, `/persona` доступна всем.
 
-Mapping Names:
-============
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/NeoForged/NeoForm/blob/main/Mojang.md
+| Команда | Что делает |
+|---|---|
+| `/tavern ping` | Проверяет связь с Таверной |
+| `/character list` | Список карточек из Таверны |
+| `/character summon <имя>` | Создаёт компаньона на вашем месте |
+| `/persona list` | Персоны из Таверны |
+| `/persona <игрок>` | Текущая персона игрока |
+| `/persona <игрок> set <имя>` | Выбрать персону (другому игроку только оператор) |
+| `/persona <игрок> reset` | Вернуть ник вместо персоны |
 
-Additional Resources: 
-==========
-Community Documentation: https://docs.neoforged.net/  
-NeoForged Discord: https://discord.neoforged.net/
-"# ST-craft" 
+## Возможности персонажа
+
+Компаньон отвечает в окне чата, а скрытые пометки модели в конце ответа переключают его поведение. Он может идти за игроком, стоять на месте, гулять вокруг места, где его оставили, или по просьбе вернуться домой. У него всегда есть право отказаться. Он открывает двери, плавает, обходит лаву и огонь, догоняет игрока и телепортируется к нему, в том числе через портал. Подбирает и надевает брошенные игроком броню, оружие, щиты и носимые блоки, возвращая прежние вещи. Сражается любым оружием: в ближнем бою, из лука, арбалета и трезубца. Защищает игрока и его команду, лечится после боя.
+
+## Возможности игрока
+
+Пустая рука по компаньону открывает чат: поддерживаются стриминг ответа, курсив (`*действие*`, серым) и жирный текст. Просьбами в чате можно позвать за собой, велеть стоять, отпустить гулять, отправить домой или попросить отдать вещь. История разговора своя у каждого игрока, а персону каждый выбирает себе сам. Вещи отдаются компаньону броском (клавиша Q). В творческом режиме и у операторов есть кнопка «Настройки» (скин, тип рук, детская модель, неуязвимость, атака мобов) и Shift+ПКМ пустой рукой, чтобы забрать всё снаряжение.
+
+## Настройка
+
+- Файл конфигурации: `config/stcraft-common.toml`, содержет адрес Таверны, стриминг, длину истории, дистанции следования и боя. 
+- Скины персонажей хранятся по адресу `config/stcraft/skins/`.

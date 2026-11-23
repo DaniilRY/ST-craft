@@ -20,24 +20,29 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.EquipmentSlotGroup;
-import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.*;
+import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ArmorItem;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.ProjectileWeaponItem;
-import net.minecraft.world.item.ShieldItem;
+import net.minecraft.world.entity.projectile.AbstractArrow;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.ThrownTrident;
+import net.minecraft.world.item.*;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.pathfinder.PathType;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
@@ -46,20 +51,29 @@ import static com.murong.stcraft.Tuning.*;
 
 public class CompanionEntity extends PathfinderMob
 {
+    public enum Style { MELEE, BOW, CROSSBOW, TRIDENT, THROWN }
     public static final int FREE = 0, STAY = 1, FOLLOW = 2;
     private static final EntityDataAccessor<String> AVATAR = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> SKIN = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Boolean> SLIM = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Boolean> CHILD = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> SHOOTING = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
 
     private static final EntityDataAccessor<Integer> MODE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     public static final TicketType<ChunkPos> TICKET = TicketType.create("stcraft_companion", Comparator.comparingLong(ChunkPos::toLong), 40);
+    private static final EntityDataAccessor<Boolean> INVULN = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> ATTACK_MOBS = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
 
     private BlockPos home = BlockPos.ZERO;
     private ResourceLocation homeDim;
-    private int releaseTicks;
+
+    private BlockPos spot = BlockPos.ZERO;
+    private ResourceLocation spotDim;
+    private int goHomeTicks;
+
     private int talkTicks;
     private int otherLevelChecks;
+    private int hurtCooldown;
 
     public String getSkinSource() { return entityData.get(SKIN); }
     public void setSkinSource(String s) { entityData.set(SKIN, s); }
@@ -78,15 +92,42 @@ public class CompanionEntity extends PathfinderMob
     public boolean isFree() { return getMode() == FREE; }
     public UUID getFollowTarget() { return followTarget; }
 
+    public boolean isFriendlyInvulnerable() { return entityData.get(INVULN); }
+    public void setFriendlyInvulnerable(boolean b) { entityData.set(INVULN, b); }
+
+    public boolean isAttackingMobs() { return entityData.get(ATTACK_MOBS); }
+    public void setAttackMobs(boolean b) { entityData.set(ATTACK_MOBS, b); }
+
+    public boolean isShooting() { return entityData.get(SHOOTING); }
+    public void setShooting(boolean b) { entityData.set(SHOOTING, b); }
+
+    private boolean isInSpotLevel()
+    {
+        return spotDim == null || spotDim.equals(level().dimension().location());
+    }
+
+    /** По просьбе игрока: через 3 секунды телепортируется домой. */
+    public void goHome()
+    {
+        followTarget = null;
+        entityData.set(MODE, FREE);
+        goHomeTicks = 60;
+        updateRestriction();
+    }
+
     public void follow(UUID player) {
         followTarget = player;
         entityData.set(MODE, FOLLOW);
+        goHomeTicks = 0;
+        setTarget(null);
         updateRestriction();
     }
 
     public void stay() {
         followTarget = null;
         entityData.set(MODE, STAY);
+        goHomeTicks = 0;
+        setTarget(null);
         getNavigation().stop();
         updateRestriction();
     }
@@ -94,7 +135,9 @@ public class CompanionEntity extends PathfinderMob
     public void release() {
         followTarget = null;
         entityData.set(MODE, FREE);
-        releaseTicks = 0;
+        goHomeTicks = 0;
+        spot = blockPosition();
+        spotDim = level().dimension().location();
         updateRestriction();
     }
 
@@ -106,6 +149,10 @@ public class CompanionEntity extends PathfinderMob
         super(type, level);
         ((GroundPathNavigation) getNavigation()).setCanOpenDoors(true);
         getNavigation().setCanFloat(true);
+        setPathfindingMalus(PathType.LAVA, -1.0F);          // лава непроходима
+        setPathfindingMalus(PathType.DAMAGE_FIRE, -1.0F);   // огонь, костёр
+        setPathfindingMalus(PathType.DANGER_FIRE, 16.0F);   // рядом с огнём
+        setPathfindingMalus(PathType.DAMAGE_OTHER, 16.0F);  // кактус, ягодные кусты
     }
 
     public static AttributeSupplier.Builder createAttributes()
@@ -117,6 +164,7 @@ public class CompanionEntity extends PathfinderMob
                 .add(Attributes.FOLLOW_RANGE, 32.0);
     }
 
+    /*
     @Override
     protected void registerGoals() {
         goalSelector.addGoal(0, new FloatGoal(this));
@@ -128,7 +176,28 @@ public class CompanionEntity extends PathfinderMob
         goalSelector.addGoal(6, new CompanionGoals.Stroll(this, 0.8));
         goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 8.0F));
         goalSelector.addGoal(8, new RandomLookAroundGoal(this));
+    }*/
+
+    @Override
+    protected void registerGoals() {
+        goalSelector.addGoal(0, new FloatGoal(this));
+        goalSelector.addGoal(0, new CompanionGoals.Escape(this, 1.4));
+        goalSelector.addGoal(1, new CompanionGoals.Ranged(this));
+        goalSelector.addGoal(2, new CompanionGoals.Melee(this));
+        goalSelector.addGoal(3, new CompanionGoals.Talk(this));
+        goalSelector.addGoal(4, new CompanionGoals.Fetch(this));
+        goalSelector.addGoal(5, new CompanionGoals.Follow(this));
+        goalSelector.addGoal(6, new OpenDoorGoal(this, true));
+        goalSelector.addGoal(7, new CompanionGoals.ReturnHome(this, 1.0));
+        goalSelector.addGoal(8, new CompanionGoals.Stroll(this, 0.8));
+        goalSelector.addGoal(9, new LookAtPlayerGoal(this, Player.class, 8.0F));
+        goalSelector.addGoal(10, new RandomLookAroundGoal(this));
+
+        targetSelector.addGoal(1, new HurtByTargetGoal(this, Player.class, CompanionEntity.class));
+        targetSelector.addGoal(2, new CompanionGoals.DefendFriends(this));
+        targetSelector.addGoal(3, new CompanionGoals.AttackHostiles(this));
     }
+
     private final Map<UUID, List<ChatLine>> histories = new HashMap<>();
     private boolean busy;
 
@@ -153,6 +222,9 @@ public class CompanionEntity extends PathfinderMob
         builder.define(SLIM, false);
         builder.define(CHILD, false);
         builder.define(MODE, FREE);
+        builder.define(INVULN, false);
+        builder.define(ATTACK_MOBS, false);
+        builder.define(SHOOTING, false);
     }
 
     public String getAvatar() { return entityData.get(AVATAR); }
@@ -166,6 +238,8 @@ public class CompanionEntity extends PathfinderMob
         setPersistenceRequired();
         home = blockPosition();
         homeDim = level().dimension().location();
+        spot = home;
+        spotDim = homeDim;
     }
 
     @Override
@@ -180,10 +254,15 @@ public class CompanionEntity extends PathfinderMob
         super.addAdditionalSaveData(tag);
         tag.putString("Avatar", getAvatar());
         tag.putLong("Home", home.asLong());
+        if (homeDim != null) tag.putString("homeDim", homeDim.toString());
+        tag.putLong("Spot", spot.asLong());
+        if (spotDim != null) tag.putString("SpotDim", spotDim.toString());
         tag.putString("Skin", getSkinSource());
         tag.putBoolean("Slim", isSlim());
         tag.putBoolean("Child", isBaby());
         tag.putInt("Mode", getMode());
+        tag.putBoolean("Invuln", isFriendlyInvulnerable());
+        tag.putBoolean("AttackMobs", isAttackingMobs());
         if (homeDim != null) tag.putString("HomeDim", homeDim.toString());
         if (followTarget != null) tag.putUUID("Follow", followTarget);
 
@@ -216,12 +295,18 @@ public class CompanionEntity extends PathfinderMob
         super.readAdditionalSaveData(tag);
         entityData.set(AVATAR, tag.getString("Avatar"));
         home = BlockPos.of(tag.getLong("Home"));
+        homeDim = tag.contains("homeDim") ? ResourceLocation.parse(tag.getString("homeDim")) : homeDim;
+        spot = tag.contains("Spot") ? BlockPos.of(tag.getLong("Spot")) : home;
+        spotDim = tag.contains("SpotDim") ? ResourceLocation.parse(tag.getString("SpotDim")) : homeDim;
         entityData.set(SKIN, tag.getString("Skin"));
         entityData.set(SLIM, tag.getBoolean("Slim"));
         entityData.set(CHILD, tag.getBoolean("Child"));
 
         followTarget = tag.hasUUID("Follow") ? tag.getUUID("Follow") : null;
         entityData.set(MODE, tag.contains("Mode") ? tag.getInt("Mode") : (followTarget != null ? FOLLOW : FREE));
+        entityData.set(INVULN, tag.getBoolean("Invuln"));
+        entityData.set(ATTACK_MOBS, tag.getBoolean("AttackMobs"));
+
         if (tag.contains("HomeDim")) homeDim = ResourceLocation.parse(tag.getString("HomeDim"));
 
         histories.clear();
@@ -256,15 +341,13 @@ public class CompanionEntity extends PathfinderMob
         }
         return super.mobInteract(player, hand);
     }
-    public void setHome(BlockPos pos)
-    {
+
+    public void setHome(BlockPos pos) {
         home = pos;
         homeDim = level().dimension().location();
+        spot = pos;
+        spotDim = homeDim;
         updateRestriction();
-    }
-
-    private boolean isInHomeLevel() {
-        return homeDim == null || homeDim.equals(level().dimension().location());
     }
 
     public Player followPlayer() {
@@ -276,6 +359,8 @@ public class CompanionEntity extends PathfinderMob
         super.tick();
         if (level().isClientSide || getAvatar().isEmpty()) return;
         if (talkTicks > 0) talkTicks--;
+        if (hurtCooldown > 0) hurtCooldown--;
+        else if (tickCount % 40 == 0 && getHealth() < getMaxHealth()) heal(1.0F);
         if (tickCount % 20 == 0) updateRestriction();
         if (tickCount % 10 == 0) modeTick();
         if (tickCount % 5 == 0) scanForGifts();
@@ -283,45 +368,70 @@ public class CompanionEntity extends PathfinderMob
 
     /** Идёт за игроком: гуляет только возле дома; следует: ограничение снято. */
     private void updateRestriction() {
-        if (getMode() == FREE && isInHomeLevel()) {
-            restrictTo(home, HOME_RADIUS);
+        if (getMode() == FREE && isInSpotLevel() && getTarget() == null) {
+            restrictTo(spot, HOME_RADIUS);
         } else if (hasRestriction()) {
             clearRestriction();
         }
     }
 
+    @Override
+    public void setTarget(LivingEntity target)
+    {
+        super.setTarget(target);
+        if (target != null && hasRestriction()) clearRestriction(); // в бою радиус дома не действует
+    }
+
     private void modeTick() {
         if (!(level() instanceof ServerLevel sl)) return;
 
-        if (getMode() == FOLLOW) {
-            if (followTarget == null) return;
-            ServerPlayer p = sl.getServer().getPlayerList().getPlayer(followTarget);
-            if (p == null) return; // игрок не в сети
+        if (goHomeTicks > 0) { // отправлен домой по просьбе игрока
+            goHomeTicks -= 10;
+            if (goHomeTicks <= 0) teleportHome(sl);
+            return;
+        }
 
-            ChunkPos cp = chunkPosition();
-            sl.getChunkSource().addRegionTicket(TICKET, cp, 3, cp);
-
-            if (p.level() == level()) {
-                otherLevelChecks = 0;
-                double far = TELEPORT_DISTANCE;
-                if (distanceToSqr(p) > far * far) teleportNear(p);
-            } else if (++otherLevelChecks >= 4) {
-                teleportNear(p);
+        LivingEntity tgt = getTarget();
+        if (tgt != null) {
+            if (isStaying() && distanceToSqr(tgt) > 36.0) {
+                setTarget(null);
+            } else if (isFollowing()) {
+                Player fp = followPlayer();
+                double leash = COMBAT_LEASH;
+                if (fp != null && distanceToSqr(fp) > leash * leash) setTarget(null);
+            } else if (isFree() && isInSpotLevel()) {
+                double leash = COMBAT_LEASH;
+                if (distanceToSqr(Vec3.atCenterOf(spot)) > leash * leash) setTarget(null);
             }
-        } else if (getMode() == FREE && TELEPORT_HOME) {
-            double far = HOME_TELEPORT_DISTANCE;
-            boolean tooFar = !isInHomeLevel() || distanceToSqr(Vec3.atCenterOf(home)) > far * far;
-            if (!tooFar) releaseTicks = 0;
-            else if (++releaseTicks >= 6) teleportHome(sl); // ~3 секунды
+        }
+
+        if (getMode() != FOLLOW || followTarget == null) return;
+        ServerPlayer p = sl.getServer().getPlayerList().getPlayer(followTarget);
+        if (p == null) return; // игрок не в сети
+
+        ChunkPos cp = chunkPosition();
+        sl.getChunkSource().addRegionTicket(TICKET, cp, 3, cp);
+
+        if (p.level() == level()) {
+            otherLevelChecks = 0;
+            double far = TELEPORT_DISTANCE;
+            if (getTarget() != null) far = Math.max(far, COMBAT_LEASH + 4);
+            if (distanceToSqr(p) > far * far) teleportNear(p);
+        } else if (++otherLevelChecks >= 4) {
+            teleportNear(p);
         }
     }
 
-    private void teleportHome(ServerLevel sl) {
+    private void teleportHome(ServerLevel sl)
+    {
         ResourceKey<Level> key = homeDim == null ? sl.dimension() : ResourceKey.create(Registries.DIMENSION, homeDim);
         ServerLevel target = sl.getServer().getLevel(key);
         if (target == null) return;
-        releaseTicks = 0;
+        spot = home;                 // новая точка стоянки: дом (до телепорта, чтобы сохранилось в данных)
+        spotDim = homeDim;
+        setTarget(null);
         getNavigation().stop();
+        target.getChunkAt(home);     // подгрузить чанк дома, если игрока там нет
         teleportTo(target, home.getX() + 0.5, home.getY(), home.getZ() + 0.5, Set.of(), getYRot(), getXRot());
     }
 
@@ -343,6 +453,11 @@ public class CompanionEntity extends PathfinderMob
     private boolean canStandAt(ServerLevel lvl, double x, double y, double z) {
         BlockPos below = BlockPos.containing(x, y, z).below();
         if (!lvl.getBlockState(below).isFaceSturdy(lvl, below, Direction.UP)) return false;
+
+        BlockPos pos = BlockPos.containing(x, y, z);
+        if (!lvl.getFluidState(pos).isEmpty() || lvl.getBlockState(pos).is(BlockTags.FIRE)
+                || lvl.getBlockState(below).is(Blocks.MAGMA_BLOCK)) return false;
+
         return lvl.noCollision(this, getDimensions(getPose()).makeBoundingBox(x, y, z));
     }
 
@@ -361,7 +476,18 @@ public class CompanionEntity extends PathfinderMob
     public static EquipmentSlot slotFor(ItemStack s)
     {
         if (s.isEmpty()) return null;
-        if (s.getItem() instanceof ArmorItem a) return a.getEquipmentSlot();
+
+        EquipmentSlot es = s.getEquipmentSlot();      // NeoForge: предметы модов задают слот сами
+        if (es == null) {
+            Equipable eq = Equipable.get(s);          // ваниль: броня, вырезанная тыква, головы
+            if (eq != null) es = eq.getEquipmentSlot();
+        }
+
+        if ((es == EquipmentSlot.HEAD || es == EquipmentSlot.CHEST || es == EquipmentSlot.LEGS || es == EquipmentSlot.FEET) && !s.is(Items.ELYTRA))
+        {
+            return es;
+        }
+
         if (s.getItem() instanceof ShieldItem) return EquipmentSlot.OFFHAND;
         if (isWeapon(s)) return EquipmentSlot.MAINHAND;
         return null;
@@ -377,9 +503,20 @@ public class CompanionEntity extends PathfinderMob
         return false;
     }
 
-    private boolean isGift(ItemEntity ie)
-    {
-        return !ie.isRemoved() && ie.getOwner() instanceof Player && slotFor(ie.getItem()) != null;
+    private boolean isGift(ItemEntity ie) {
+        return !ie.isRemoved() && ie.getOwner() instanceof Player
+                && slotFor(ie.getItem()) != null && closestToItem(ie);
+    }
+
+    private boolean closestToItem(ItemEntity ie) {
+        double mine = distanceToSqr(ie);
+        for (CompanionEntity o : level().getEntitiesOfClass(CompanionEntity.class, ie.getBoundingBox().inflate(8))) {
+            if (o == this || o.isDeadOrDying()) continue;
+            double d = o.distanceToSqr(ie);
+            boolean canTake = !o.isStaying() || d < 2.25; // стоящий на месте берёт только то, что рядом
+            if (canTake && d < mine) return false;
+        }
+        return true;
     }
 
     public ItemEntity findGift(double range)
@@ -487,5 +624,109 @@ public class CompanionEntity extends PathfinderMob
                     .append(" (").append(st.getHoverName().getString()).append("); ");
         }
         return sb.isEmpty() ? "nothing" : sb.toString().trim();
+    }
+
+    public Style weaponStyle() {
+        Item item = getMainHandItem().getItem();
+        if (CompanionRanged.get(item) != null) return Style.THROWN;
+        if (item instanceof BowItem) return Style.BOW;
+        if (item instanceof CrossbowItem) return Style.CROSSBOW;
+        if (item instanceof TridentItem) return Style.TRIDENT;
+        return Style.MELEE;
+    }
+
+    /** Стрелять (true) или драться вплотную (false) с этой целью. */
+    public boolean shouldShoot(LivingEntity target) {
+        return switch (weaponStyle()) {
+            case BOW, CROSSBOW -> true;
+            case TRIDENT, THROWN -> distanceToSqr(target) > 25.0;
+            default -> false;
+        };
+    }
+
+    public int shootInterval() {
+        CompanionRanged.Entry reg = CompanionRanged.get(getMainHandItem().getItem());
+        if (reg != null) return reg.interval();
+        return switch (weaponStyle()) {
+            case BOW -> 20;
+            case CROSSBOW -> 35;
+            default -> 40;
+        };
+    }
+
+    public void shoot(LivingEntity target) {
+        ItemStack held = getMainHandItem();
+        CompanionRanged.Entry reg = CompanionRanged.get(held.getItem());
+        Style style = weaponStyle();
+
+        Projectile proj;
+        float speed;
+        float gravity = 0.05F;
+        SoundEvent sound = SoundEvents.ARROW_SHOOT;
+        if (reg != null) {
+            proj = reg.factory().create(level(), this, held.copy());
+            speed = reg.speed();
+            gravity = reg.gravity();
+        } else if (style == Style.TRIDENT) {
+            proj = new ThrownTrident(level(), this, held.copy());
+            speed = 2.5F;
+        } else {
+            AbstractArrow arrow = EntityType.ARROW.create(level());
+            if (arrow == null) return;
+            arrow.setOwner(this);
+            proj = arrow;
+            speed = style == Style.CROSSBOW ? 3.15F : 2.5F;
+            if (style == Style.CROSSBOW) sound = SoundEvents.CROSSBOW_SHOOT;
+        }
+
+        // упреждение по скорости цели и поправка на падение за время полёта
+        double ox = getX(), oy = getEyeY() - 0.1, oz = getZ();
+        double dx = target.getX() - ox;
+        double dy = target.getY(0.5) - oy;
+        double dz = target.getZ() - oz;
+        Vec3 v = target.getDeltaMovement();
+        double t = Math.sqrt(dx * dx + dz * dz) / speed;
+        dx += v.x * t;
+        dz += v.z * t;
+        t = Math.sqrt(dx * dx + dz * dz) / speed;
+        dy += gravity * 0.5 * t * (t + 1);
+
+        proj.setPos(ox, oy, oz);
+        if (proj instanceof AbstractArrow a) a.pickup = AbstractArrow.Pickup.DISALLOWED;
+        proj.shoot(dx, dy, dz, speed, 1.5F);
+        playSound(sound, 1.0F, 1.0F / (getRandom().nextFloat() * 0.4F + 0.8F));
+        level().addFreshEntity(proj);
+        swing(InteractionHand.MAIN_HAND);
+    }
+
+    /** Кого он защищает: игрок, за которым идёт, и игроки из его команды рядом. */
+    public List<Player> friends() {
+        List<Player> out = new ArrayList<>();
+        Player f = followPlayer();
+        if (f != null) out.add(f);
+        if (getTeam() != null) {
+            for (Player p : level().players()) {
+                if (p != f && p.isAlliedTo(this) && distanceToSqr(p) < 1024.0) out.add(p);
+            }
+        }
+        return out;
+    }
+
+    @Override
+    public boolean canAttack(LivingEntity target) {
+        if (target instanceof Player || target instanceof CompanionEntity) return false;
+        if (target instanceof OwnableEntity o && o.getOwnerUUID() != null) return false; // питомцы
+        return super.canAttack(target);
+    }
+
+    @Override
+    public boolean hurt(DamageSource source, float amount) {
+        if (isFriendlyInvulnerable() && !source.is(DamageTypeTags.BYPASSES_INVULNERABILITY)) {
+            Entity attacker = source.getEntity();
+            if (attacker instanceof Player || attacker instanceof CompanionEntity) return false;
+        }
+        boolean hurt = super.hurt(source, amount);
+        if (hurt && !level().isClientSide) hurtCooldown = REGEN_DELAY_TICKS * 20;
+        return hurt;
     }
 }

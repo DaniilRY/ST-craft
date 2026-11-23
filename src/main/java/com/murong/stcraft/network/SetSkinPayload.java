@@ -10,7 +10,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-public record SetSkinPayload(int entityId, String skin, boolean slim, boolean child) implements CustomPacketPayload
+public record SetSkinPayload(int entityId, String skin, boolean slim, boolean child, boolean invulnerable, boolean attackMobs) implements CustomPacketPayload
 {
     public static final Type<SetSkinPayload> TYPE = new Type<>(STCraft.id("set_skin"));
 
@@ -19,6 +19,8 @@ public record SetSkinPayload(int entityId, String skin, boolean slim, boolean ch
             ByteBufCodecs.STRING_UTF8, SetSkinPayload::skin,
             ByteBufCodecs.BOOL, SetSkinPayload::slim,
             ByteBufCodecs.BOOL, SetSkinPayload::child,
+            ByteBufCodecs.BOOL, SetSkinPayload::invulnerable,
+            ByteBufCodecs.BOOL, SetSkinPayload::attackMobs,
             SetSkinPayload::new);
 
     @Override
@@ -37,6 +39,8 @@ public record SetSkinPayload(int entityId, String skin, boolean slim, boolean ch
             c.setSkinSource(s);
             c.setSlim(p.slim());
             c.setChild(p.child());
+            c.setFriendlyInvulnerable(p.invulnerable());
+            c.setAttackMobs(p.attackMobs());
         });
     }
 }

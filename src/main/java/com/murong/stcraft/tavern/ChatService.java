@@ -22,7 +22,7 @@ public final class ChatService
     private ChatService() {}
 
     private static final Pattern STOP = Pattern.compile("(?iu)(?<!\\p{L})(стой|стоять|останься|оставайся|жди|подожди|ждать|stay|stop|wait)(?!\\p{L})");
-    private static final Pattern RELEASE = Pattern.compile("(?iu)(?<!\\p{L})(свободен|свободна|гуляй|иди гулять|иди домой|можешь гулять|go home|you are free|you're free)(?!\\p{L})");
+    private static final Pattern RELEASE = Pattern.compile("(?iu)(?<!\\p{L})(свободен|свободна|гуляй|иди гулять|можешь гулять|you are free|you're free)(?!\\p{L})");
 
     private record Ctx(TavernCharacter ch, TavernClient.Settings st) {}
 
@@ -55,13 +55,25 @@ public final class ChatService
         }));
     }
 
+    private static void reject(ServerPlayer sp, int entityId, String key)
+    {
+        PacketDistributor.sendToPlayer(sp, new ChatReplyPayload(entityId, new ChatLine(ChatLine.ERROR, key)));
+    }
+
     public static void handleSend(ChatSendPayload p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
-            if (!(sp.level().getEntity(p.entityId()) instanceof CompanionEntity c)
-                    || c.distanceToSqr(sp) > 64) return;
             String text = p.text().trim();
-            if (text.isEmpty() || text.length() > Tuning.CHAT_INPUT_MAX || c.isBusy()) return;
+            if (text.isEmpty() || text.length() > Tuning.CHAT_INPUT_MAX) return;
+            if (!(sp.level().getEntity(p.entityId()) instanceof CompanionEntity c)
+                    || c.distanceToSqr(sp) > Tuning.CHAT_RANGE * Tuning.CHAT_RANGE) {
+                reject(sp, p.entityId(), "stcraft.chat.too_far");
+                return;
+            }
+            if (c.isBusy()) {
+                reject(sp, p.entityId(), "stcraft.chat.busy");
+                return;
+            }
 
             UUID id = sp.getUUID();
             String sel = PersonaService.selected(sp);
@@ -133,7 +145,7 @@ public final class ChatService
         ctx.enqueueWork(() -> {
             if (ctx.player() instanceof ServerPlayer sp
                     && sp.level().getEntity(p.entityId()) instanceof CompanionEntity c
-                    && c.distanceToSqr(sp) <= 100) {
+                    && c.distanceToSqr(sp) <= Tuning.CHAT_RANGE * Tuning.CHAT_RANGE) {
                 c.setTalking(p.open());
             }
         });
@@ -162,6 +174,9 @@ public final class ChatService
             note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.home_set", name));
         } else if (marker.regionMatches(true, 0, "[GIVE:", 0, 6)) {
             c.giveItem(sp, marker.substring(6, marker.length() - 1).trim());
+        } else if (marker.equals("[GOHOME]")) {
+            c.goHome();
+            note(sp, c, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.going_home", name));
         }
     }
 

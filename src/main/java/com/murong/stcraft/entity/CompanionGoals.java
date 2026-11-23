@@ -1,13 +1,29 @@
 package com.murong.stcraft.entity;
 
 import com.murong.stcraft.Config;
-import net.minecraft.world.entity.ai.goal.Goal;
-import net.minecraft.world.entity.ai.goal.MoveTowardsRestrictionGoal;
-import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.goal.*;
+import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
+import net.minecraft.world.entity.ai.goal.target.TargetGoal;
+import net.minecraft.world.entity.ai.targeting.TargetingConditions;
+import net.minecraft.world.entity.ai.util.DefaultRandomPos;
+import net.minecraft.world.entity.ambient.Bat;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.EnderMan;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.monster.ZombifiedPiglin;
+import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 import static com.murong.stcraft.Tuning.*;
 
@@ -25,8 +41,10 @@ public final class CompanionGoals {
             setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
         }
 
-        @Override public boolean canUse() { return c.isTalking(); }
-        @Override public boolean canContinueToUse() { return c.isTalking(); }
+        //@Override public boolean canUse() { return c.isTalking(); }
+        //@Override public boolean canContinueToUse() { return c.isTalking(); }
+        @Override public boolean canUse() { return c.isTalking() && c.getTarget() == null; }
+        @Override public boolean canContinueToUse() { return c.isTalking() && c.getTarget() == null; }
         @Override public void start() { c.getNavigation().stop(); }
 
         @Override
@@ -109,7 +127,7 @@ public final class CompanionGoals {
             this.c = c;
         }
 
-        @Override public boolean canUse() { return c.isFree() && !c.isTalking() && super.canUse(); }
+        @Override public boolean canUse() { return c.isFree() && !c.isTalking() && c.getTarget() == null && super.canUse(); }
     }
 
     /** Подходит к вещи, которую бросил игрок (режимы FREE и FOLLOW; в STAY стоит на месте). */
@@ -152,5 +170,156 @@ public final class CompanionGoals {
                 c.getNavigation().moveTo(target, 1.1);
             }
         }
+    }
+
+    /** Ближний бой любым оружием, трезубец вплотную. */
+    public static class Melee extends MeleeAttackGoal {
+        private final CompanionEntity c;
+
+        public Melee(CompanionEntity c) {
+            super(c, 1.2, true);
+            this.c = c;
+        }
+
+        private boolean applies() {
+            LivingEntity t = c.getTarget();
+            return t != null && !c.shouldShoot(t);
+        }
+
+        @Override public boolean canUse() { return applies() && super.canUse(); }
+        @Override public boolean canContinueToUse() { return applies() && super.canContinueToUse(); }
+    }
+
+    /** Лук, арбалет, трезубец издали: держит дистанцию и стреляет по таймеру. */
+    public static class Ranged extends Goal {
+        private final CompanionEntity c;
+        private int cooldown;
+        private int recalc;
+
+        public Ranged(CompanionEntity c) {
+            this.c = c;
+            setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+        }
+
+        private boolean applies() {
+            LivingEntity t = c.getTarget();
+            return t != null && t.isAlive() && c.shouldShoot(t);
+        }
+
+        @Override public boolean canUse() { return applies(); }
+        @Override public boolean canContinueToUse() { return applies(); }
+
+        @Override
+        public void start() {
+            cooldown = 10;
+            recalc = 0;
+            c.setShooting(true);
+        }
+
+        @Override
+        public void stop() {
+            c.setShooting(false);
+            c.stopUsingItem();
+            c.getNavigation().stop();
+        }
+
+        @Override
+        public void tick() {
+            LivingEntity t = c.getTarget();
+            if (t == null) return;
+            double d2 = c.distanceToSqr(t);
+            boolean sees = c.getSensing().hasLineOfSight(t);
+            c.getLookControl().setLookAt(t, 30.0F, 30.0F);
+
+            if (c.weaponStyle() == CompanionEntity.Style.BOW && cooldown <= 20 && !c.isUsingItem())
+            {
+                c.startUsingItem(InteractionHand.MAIN_HAND);
+            }
+
+            if (!c.isStaying() && --recalc <= 0) {
+                recalc = 10;
+                if (d2 < 25.0) { // слишком близко: отступаем
+                    Vec3 away = DefaultRandomPos.getPosAway(c, 8, 4, t.position());
+                    if (away != null) c.getNavigation().moveTo(away.x, away.y, away.z, 1.2);
+                } else if (!sees || d2 > 18.0 * 18.0) {
+                    c.getNavigation().moveTo(t, 1.0);
+                } else {
+                    c.getNavigation().stop();
+                }
+            }
+            if (--cooldown <= 0 && sees && d2 < 24.0 * 24.0) {
+                c.shoot(t);
+                c.stopUsingItem();
+                cooldown = c.shootInterval();
+            }
+        }
+    }
+
+    /** Защищает друзей: кто их ударил и кого они ударили (если враждебный). */
+    public static class DefendFriends extends TargetGoal {
+        private final CompanionEntity c;
+        private final Map<UUID, Integer> seenBy = new HashMap<>();
+        private final Map<UUID, Integer> seenHit = new HashMap<>();
+        private LivingEntity candidate;
+
+        public DefendFriends(CompanionEntity c) {
+            super(c, false);
+            this.c = c;
+        }
+
+        @Override
+        public boolean canUse() {
+            for (Player f : c.friends()) {
+                LivingEntity attacker = f.getLastHurtByMob();
+                int ts = f.getLastHurtByMobTimestamp();
+                if (attacker != null && ts != seenBy.getOrDefault(f.getUUID(), -1)) {
+                    seenBy.put(f.getUUID(), ts);
+                    if (canAttack(attacker, TargetingConditions.DEFAULT)) {
+                        candidate = attacker;
+                        return true;
+                    }
+                }
+                LivingEntity victim = f.getLastHurtMob();
+                int ts2 = f.getLastHurtMobTimestamp();
+                if (victim instanceof Enemy && ts2 != seenHit.getOrDefault(f.getUUID(), -1)) {
+                    seenHit.put(f.getUUID(), ts2);
+                    if (canAttack(victim, TargetingConditions.DEFAULT)) {
+                        candidate = victim;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public void start() {
+            c.setTarget(candidate);
+            super.start();
+        }
+    }
+
+    /** Сам нападает на враждебных мобов рядом (кроме крипера, эндермена, пиглинов). */
+    public static class AttackHostiles extends NearestAttackableTargetGoal<Mob> {
+        private final CompanionEntity c;
+
+        public AttackHostiles(CompanionEntity c) {
+            super(c, Mob.class, 10, true, false, CompanionGoals::isHostileTarget);
+            this.c = c;
+        }
+
+        @Override public boolean canUse() { return c.isAttackingMobs() && !c.isStaying() && super.canUse(); }
+        @Override public boolean canContinueToUse() { return c.isAttackingMobs() && super.canContinueToUse(); }
+    }
+
+    private static boolean isHostileTarget(LivingEntity e)
+    {
+        return e instanceof Enemy && !(e instanceof Bat) && !(e instanceof Creeper) && !(e instanceof EnderMan) && !(e instanceof ZombifiedPiglin) && !(e instanceof AbstractPiglin);
+    }
+
+    /** Горит или замерзает: бежит к воде или прочь. */
+    public static class Escape extends PanicGoal {
+        public Escape(PathfinderMob mob, double speed) { super(mob, speed); }
+        @Override protected boolean shouldPanic() { return mob.isOnFire() || mob.isFreezing(); }
     }
 }

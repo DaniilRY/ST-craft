@@ -14,6 +14,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
@@ -134,7 +135,7 @@ public class CompanionChatScreen extends Screen {
         if (streaming != null) {
             blocks.add(new Block(font.split(format(new ChatLine(ChatLine.COMPANION, streaming.toString())), w)));
         } else if (waiting) {
-            blocks.add(new Block(font.split(Component.translatable("stcraft.chat.typing")
+            blocks.add(new Block(font.split(Component.translatable("stcraft.chat.thinking")
                     .withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC), w)));
         }
     }
@@ -182,7 +183,9 @@ public class CompanionChatScreen extends Screen {
 
     private static void flush(MutableComponent out, StringBuilder buf, boolean italic, boolean bold) {
         if (buf.isEmpty()) return;
-        out.append(Component.literal(buf.toString()).withStyle(Style.EMPTY.withItalic(italic).withBold(bold)));
+        Style st = Style.EMPTY.withItalic(italic).withBold(bold);
+        if (italic) st = st.withColor(ChatFormatting.GRAY);
+        out.append(Component.literal(buf.toString()).withStyle(st));
         buf.setLength(0);
     }
 
@@ -232,6 +235,13 @@ public class CompanionChatScreen extends Screen {
             }
         }
         g.drawCenteredString(font, header, width / 2, 12, 0xFFFFFFFF);
+
+        if (minecraft != null && minecraft.level != null && minecraft.level.getEntity(entityId) instanceof LivingEntity le)
+        {
+            int hp = (int) Math.ceil(le.getHealth());
+            int max = (int) Math.ceil(le.getMaxHealth());
+            g.drawString(font, Component.translatable("stcraft.chat.health", hp, max).withStyle(ChatFormatting.RED), left() + PAD, 12, 0xFFFFFFFF);
+        }
 
         int lh = font.lineHeight + 1;
         int contentH = 0;
