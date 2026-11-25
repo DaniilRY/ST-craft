@@ -23,11 +23,12 @@ public class CompanionSkinScreen extends Screen
     private boolean child;
     private boolean invulnerable;
     private boolean attackMobs;
+    private boolean respawn;
     private SkinDropdown dropdown;
 
     public CompanionSkinScreen(CompanionEntity companion)
     {
-        super(Component.translatable("stcraft.skin.title", companion.getName()));
+        super(Component.translatable("stcraft.settings.title", companion.getName()));
         this.companion = companion;
     }
 
@@ -42,52 +43,58 @@ public class CompanionSkinScreen extends Screen
         child = companion.isBaby();
         invulnerable = companion.isFriendlyInvulnerable();
         attackMobs = companion.isAttackingMobs();
+        respawn = companion.isRespawnEnabled();
 
         int cx = width / 2;
 
         // 1. Список со скинами
         dropdown = new SkinDropdown(font, cx - 100, 28, 200, 20, skins, index,
-                s -> s.isEmpty() ? Component.translatable("stcraft.skin.default").getString() : s,
+                s -> s.isEmpty() ? Component.translatable("stcraft.settings.default").getString() : s,
                 i -> index = i);
         addRenderableWidget(dropdown);
 
         // 2. Открыть папку со скинами
-        addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.open_folder"),
+        addRenderableWidget(Button.builder(Component.translatable("stcraft.settings.open_folder"),
                         b -> Util.getPlatform().openFile(SkinCache.DIR.toFile()))
                 .bounds(cx - 100, 52, 200, 20).build());
 
         // 3. Тип рук
         addRenderableWidget(CycleButton.booleanBuilder(
-                        Component.translatable("stcraft.skin.model.slim"),
-                        Component.translatable("stcraft.skin.model.wide"))
+                        Component.translatable("stcraft.settings.model.slim"),
+                        Component.translatable("stcraft.settings.model.wide"))
                 .displayOnlyValue()
                 .withInitialValue(slim)
-                .create(cx - 100, 76, 200, 20, Component.translatable("stcraft.skin.model"),
+                .create(cx - 100, 76, 200, 20, Component.translatable("stcraft.settings.model"),
                         (btn, v) -> slim = v));
 
         // 4. Модель ребёнка
         addRenderableWidget(CycleButton.onOffBuilder(child)
-                .create(cx - 100, 100, 200, 20, Component.translatable("stcraft.skin.child"),
+                .create(cx - 100, 100, 200, 20, Component.translatable("stcraft.settings.child"),
                         (btn, v) -> child = v));
 
         // 5. Неуязвимость
         addRenderableWidget(CycleButton.onOffBuilder(invulnerable)
-                .create(cx - 100, 124, 200, 20, Component.translatable("stcraft.skin.invulnerable"),
+                .create(cx - 100, 124, 200, 20, Component.translatable("stcraft.settings.invulnerable"),
                         (btn, v) -> invulnerable = v));
 
         // 6. Атаковать мобов
         addRenderableWidget(CycleButton.onOffBuilder(attackMobs)
-                .create(cx - 100, 148, 200, 20, Component.translatable("stcraft.skin.attack_mobs"),
+                .create(cx - 100, 148, 200, 20, Component.translatable("stcraft.settings.attack_mobs"),
                         (btn, v) -> attackMobs = v));
 
-        // 7. Применить / Отмена
-        addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.apply"), b -> {
+        // 7. Возрождение
+        addRenderableWidget(CycleButton.onOffBuilder(respawn)
+                .create(cx - 100, 172, 200, 20, Component.translatable("stcraft.settings.respawn"),
+                        (btn, v) -> respawn = v));
+
+        // 8. Применить / Отмена
+        addRenderableWidget(Button.builder(Component.translatable("stcraft.settings.apply"), b -> {
             PacketDistributor.sendToServer(new SetSkinPayload(
-                    companion.getId(), skins.get(index), slim, child, invulnerable, attackMobs));
+                    companion.getId(), skins.get(index), slim, child, invulnerable, attackMobs, respawn));
             onClose();
-        }).bounds(cx - 100, 176, 98, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("stcraft.skin.cancel"), b -> onClose())
-                .bounds(cx + 2, 176, 98, 20).build());
+        }).bounds(cx - 100, 200, 98, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("stcraft.settings.cancel"), b -> onClose())
+                .bounds(cx + 2, 200, 98, 20).build());
     }
 
     private void shift(int d) {

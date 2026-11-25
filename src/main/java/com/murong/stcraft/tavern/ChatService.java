@@ -99,6 +99,7 @@ public final class ChatService
             int mode = c.getMode();
 
             String gear = c.describeGear();
+            String world = c.describeWorld();
             List<ChatLine> snapshot = List.copyOf(c.history(id));
 
             StringBuffer raw = new StringBuffer();
@@ -116,7 +117,7 @@ public final class ChatService
                     .thenCompose(x -> {
                         Persona pe = PersonaService.pick(x.st(), sel, nick);
                         return TavernCommands.CLIENT.generate(
-                                buildMessages(x.ch(), x.st(), pe, snapshot, mode, gear),
+                                buildMessages(x.ch(), x.st(), pe, snapshot, mode, gear, world),
                                 x.ch().name(), pe.name(), x.st(), stream, onDelta);
                     })
                     .whenComplete((reply, err) -> sp.getServer().execute(() -> {
@@ -124,12 +125,13 @@ public final class ChatService
                         MarkerFilter f = new MarkerFilter();
                         String out = ((f.accept(err == null ? reply : raw.toString())) + f.finish()).trim();
                         com.murong.stcraft.STCraft.LOGGER.info("Reply raw: {}", err == null ? reply : raw.toString());
-                        if (!out.isEmpty()) {
+                        if (!out.isEmpty())
+                        {
                             c.addHistory(id, new ChatLine(ChatLine.COMPANION, out));
                             tell(sp, c, new ChatLine(ChatLine.COMPANION, out));
-                        } else {
-                            //List<ChatLine> h = c.history(id);
-                            //if (!h.isEmpty() && h.get(h.size() - 1) == mine) h.remove(h.size() - 1);
+                        }
+                        else
+                        {
                             c.history(id).removeIf(x -> x == mine);
                         }
                         if (err != null) tell(sp, c, errorLine(err));
@@ -186,7 +188,7 @@ public final class ChatService
         return new ChatLine(ChatLine.ERROR, te.key(), te.args());
     }
 
-    private static JsonArray buildMessages(TavernCharacter ch, TavernClient.Settings st, Persona pe, List<ChatLine> history, int mode, String gear)
+    private static JsonArray buildMessages(TavernCharacter ch, TavernClient.Settings st, Persona pe, List<ChatLine> history, int mode, String gear, String world)
     {
         String user = pe.name();
         JsonArray arr = new JsonArray();
@@ -206,7 +208,8 @@ public final class ChatService
             default -> Tuning.STATE_FREE;
         };
         //arr.add(msg("system", mac(Tuning.MARKER_HINT + " " + state, ch.name(), user)));
-        arr.add(msg("system", mac(Tuning.MARKER_HINT + " " + state + " Your gear: " + gear + ".", ch.name(), user)));
+        //arr.add(msg("system", mac(Tuning.MARKER_HINT + " " + state + " Your gear: " + gear + ".", ch.name(), user)));
+        arr.add(msg("system", mac(Tuning.MARKER_HINT + " " + state + " Your gear: " + gear + ". Surroundings: " + world + ". Mention the surroundings only when it is relevant.", ch.name(), user)));
         arr.add(msg("system", st.newChatPrompt()));
 
         List<ChatLine> talk = history.stream().filter(l -> l.role() == ChatLine.PLAYER || l.role() == ChatLine.COMPANION).toList();

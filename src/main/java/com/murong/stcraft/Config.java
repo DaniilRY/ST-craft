@@ -12,8 +12,9 @@ public class Config
     public static final ModConfigSpec.IntValue MIN_REPLY_TOKENS;
     public static final ModConfigSpec.IntValue HISTORY_MAX;
     public static final ModConfigSpec.IntValue PROMPT_HISTORY;
-    public static final ModConfigSpec.BooleanValue TELEPORT_HOME;
-    public static final ModConfigSpec.DoubleValue HOME_TELEPORT_DISTANCE;
+    public static final ModConfigSpec.IntValue CHAT_INPUT_MAX;
+    public static final ModConfigSpec.DoubleValue CHAT_RANGE;
+    public static final ModConfigSpec.IntValue RESPAWN_SECONDS;
 
     static final ModConfigSpec SPEC;
 
@@ -26,13 +27,14 @@ public class Config
         BUILDER.pop();
 
         BUILDER.push("chat");
-        HISTORY_MAX = BUILDER.comment("Messages kept per player and companion").defineInRange("historyMax", 60, 10, 500);
-        PROMPT_HISTORY = BUILDER.comment("Messages sent to the model with each request").defineInRange("promptHistory", 30, 2, 200);
+        HISTORY_MAX = BUILDER.comment("Messages kept per player and companion").defineInRange("historyMax", 100, 10, 500);
+        PROMPT_HISTORY = BUILDER.comment("Messages sent to the model with each request").defineInRange("promptHistory", 50, 2, 200);
+        CHAT_INPUT_MAX = BUILDER.comment("Maximum length of one chat message in characters. Keep it equal on the client and the server").defineInRange("chatInputMax", 1000, 50, 4000);
+        CHAT_RANGE = BUILDER.comment("How far (in blocks) the companion can be from you while you chat with him").defineInRange("chatRange", 12.0, 3.0, 128.0);
         BUILDER.pop();
 
         BUILDER.push("character");
-        TELEPORT_HOME = BUILDER.comment("A released companion teleports home when he is too far from it").define("teleportHomeOnRelease", false);
-        HOME_TELEPORT_DISTANCE = BUILDER.comment("Distance from home (blocks) after which a free companion teleports home").defineInRange("homeTeleportDistance", 24.0, 4.0, 256.0);
+        RESPAWN_SECONDS = BUILDER.comment("Seconds until a dead companion comes back (if respawn is enabled for him)").defineInRange("respawnSeconds", 60, 5, 3600);
         BUILDER.pop();
 
         SPEC = BUILDER.build();

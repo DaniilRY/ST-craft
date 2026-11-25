@@ -10,10 +10,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-public record SetSkinPayload(int entityId, String skin, boolean slim, boolean child, boolean invulnerable, boolean attackMobs) implements CustomPacketPayload
+public record SetSkinPayload(int entityId, String skin, boolean slim, boolean child, boolean invulnerable, boolean attackMobs, boolean respawn) implements CustomPacketPayload
 {
     public static final Type<SetSkinPayload> TYPE = new Type<>(STCraft.id("set_skin"));
 
+    /*
     public static final StreamCodec<RegistryFriendlyByteBuf, SetSkinPayload> CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_INT, SetSkinPayload::entityId,
             ByteBufCodecs.STRING_UTF8, SetSkinPayload::skin,
@@ -21,7 +22,30 @@ public record SetSkinPayload(int entityId, String skin, boolean slim, boolean ch
             ByteBufCodecs.BOOL, SetSkinPayload::child,
             ByteBufCodecs.BOOL, SetSkinPayload::invulnerable,
             ByteBufCodecs.BOOL, SetSkinPayload::attackMobs,
-            SetSkinPayload::new);
+            ByteBufCodecs.BOOL, SetSkinPayload::respawn,
+            SetSkinPayload::new);*/
+
+    public static final StreamCodec<RegistryFriendlyByteBuf, SetSkinPayload> CODEC =
+            StreamCodec.of(
+                    (buf, payload) -> {
+                        buf.writeVarInt(payload.entityId());
+                        buf.writeUtf(payload.skin());
+                        buf.writeBoolean(payload.slim());
+                        buf.writeBoolean(payload.child());
+                        buf.writeBoolean(payload.invulnerable());
+                        buf.writeBoolean(payload.attackMobs());
+                        buf.writeBoolean(payload.respawn());
+                    },
+                    buf -> new SetSkinPayload(
+                            buf.readVarInt(),
+                            buf.readUtf(),
+                            buf.readBoolean(),
+                            buf.readBoolean(),
+                            buf.readBoolean(),
+                            buf.readBoolean(),
+                            buf.readBoolean()
+                    )
+            );
 
     @Override
     public Type<? extends CustomPacketPayload> type() { return TYPE; }
@@ -41,6 +65,7 @@ public record SetSkinPayload(int entityId, String skin, boolean slim, boolean ch
             c.setChild(p.child());
             c.setFriendlyInvulnerable(p.invulnerable());
             c.setAttackMobs(p.attackMobs());
+            c.setRespawnEnabled(p.respawn());
         });
     }
 }

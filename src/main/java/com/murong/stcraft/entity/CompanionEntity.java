@@ -1,10 +1,13 @@
 package com.murong.stcraft.entity;
 
+import com.murong.stcraft.Config;
 import com.murong.stcraft.Tuning;
 import com.murong.stcraft.network.ChatLine;
 import com.murong.stcraft.tavern.ChatService;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -12,11 +15,13 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
@@ -24,8 +29,7 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.DamageTypeTags;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
+import net.minecraft.world.*;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
@@ -40,7 +44,9 @@ import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.ThrownTrident;
 import net.minecraft.world.item.*;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.pathfinder.PathType;
 import net.minecraft.world.phys.Vec3;
@@ -63,6 +69,34 @@ public class CompanionEntity extends PathfinderMob
     public static final TicketType<ChunkPos> TICKET = TicketType.create("stcraft_companion", Comparator.comparingLong(ChunkPos::toLong), 40);
     private static final EntityDataAccessor<Boolean> INVULN = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Boolean> ATTACK_MOBS = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> RESPAWN = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+
+    public boolean isRespawnEnabled() { return entityData.get(RESPAWN); }
+    public void setRespawnEnabled(boolean b) { entityData.set(RESPAWN, b); }
+
+    public final SimpleContainer inventory = new SimpleContainer(27);
+    private final LinkedHashSet<UUID> loot = new LinkedHashSet<>();
+
+    public void markLoot(ItemEntity ie) {
+        loot.add(ie.getUUID());
+        while (loot.size() > 64) loot.remove(loot.iterator().next());
+    }
+
+    @Override
+    protected void dropCustomDeathLoot(ServerLevel level, DamageSource source, boolean recentlyHit)
+    {
+        // вещи вернутся вместе с ним, если он возродится и включён keepInventory
+        if (level.getGameRules().getBoolean(GameRules.RULE_KEEPINVENTORY) && isRespawnEnabled()) return;
+        for (EquipmentSlot s : EquipmentSlot.values()) {
+            ItemStack st = getItemBySlot(s);
+            if (!st.isEmpty()) {
+                spawnAtLocation(st.copy());
+                setItemSlot(s, ItemStack.EMPTY);
+            }
+        }
+        Containers.dropContents(level, blockPosition(), inventory);
+        inventory.clearContent();
+    }
 
     private BlockPos home = BlockPos.ZERO;
     private ResourceLocation homeDim;
@@ -115,7 +149,8 @@ public class CompanionEntity extends PathfinderMob
         updateRestriction();
     }
 
-    public void follow(UUID player) {
+    public void follow(UUID player)
+    {
         followTarget = player;
         entityData.set(MODE, FOLLOW);
         goHomeTicks = 0;
@@ -123,10 +158,13 @@ public class CompanionEntity extends PathfinderMob
         updateRestriction();
     }
 
-    public void stay() {
+    public void stay()
+    {
         followTarget = null;
         entityData.set(MODE, STAY);
         goHomeTicks = 0;
+        spot = blockPosition();
+        spotDim = level().dimension().location();
         setTarget(null);
         getNavigation().stop();
         updateRestriction();
@@ -163,20 +201,6 @@ public class CompanionEntity extends PathfinderMob
                 .add(Attributes.ATTACK_DAMAGE, 1.0)
                 .add(Attributes.FOLLOW_RANGE, 32.0);
     }
-
-    /*
-    @Override
-    protected void registerGoals() {
-        goalSelector.addGoal(0, new FloatGoal(this));
-        goalSelector.addGoal(1, new CompanionGoals.Talk(this));
-        goalSelector.addGoal(2, new CompanionGoals.Fetch(this));
-        goalSelector.addGoal(3, new CompanionGoals.Follow(this));
-        goalSelector.addGoal(4, new OpenDoorGoal(this, true));
-        goalSelector.addGoal(5, new CompanionGoals.ReturnHome(this, 1.0));
-        goalSelector.addGoal(6, new CompanionGoals.Stroll(this, 0.8));
-        goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 8.0F));
-        goalSelector.addGoal(8, new RandomLookAroundGoal(this));
-    }*/
 
     @Override
     protected void registerGoals() {
@@ -224,6 +248,7 @@ public class CompanionEntity extends PathfinderMob
         builder.define(MODE, FREE);
         builder.define(INVULN, false);
         builder.define(ATTACK_MOBS, false);
+        builder.define(RESPAWN, false);
         builder.define(SHOOTING, false);
     }
 
@@ -263,6 +288,7 @@ public class CompanionEntity extends PathfinderMob
         tag.putInt("Mode", getMode());
         tag.putBoolean("Invuln", isFriendlyInvulnerable());
         tag.putBoolean("AttackMobs", isAttackingMobs());
+        tag.putBoolean("Respawn", isRespawnEnabled());
         if (homeDim != null) tag.putString("HomeDim", homeDim.toString());
         if (followTarget != null) tag.putUUID("Follow", followTarget);
 
@@ -287,6 +313,10 @@ public class CompanionEntity extends PathfinderMob
             chats.put(e.getKey().toString(), list);
         }
         tag.put("Chats", chats);
+
+        CompoundTag inv = new CompoundTag();
+        ContainerHelper.saveAllItems(inv, inventory.getItems(), registryAccess());
+        tag.put("Inventory", inv);
     }
 
     @Override
@@ -306,6 +336,7 @@ public class CompanionEntity extends PathfinderMob
         entityData.set(MODE, tag.contains("Mode") ? tag.getInt("Mode") : (followTarget != null ? FOLLOW : FREE));
         entityData.set(INVULN, tag.getBoolean("Invuln"));
         entityData.set(ATTACK_MOBS, tag.getBoolean("AttackMobs"));
+        entityData.set(RESPAWN, !tag.contains("Respawn") || tag.getBoolean("Respawn"));
 
         if (tag.contains("HomeDim")) homeDim = ResourceLocation.parse(tag.getString("HomeDim"));
 
@@ -324,6 +355,8 @@ public class CompanionEntity extends PathfinderMob
             }
             histories.put(UUID.fromString(key), h);
         }
+
+        ContainerHelper.loadAllItems(tag.getCompound("Inventory"), inventory.getItems(), registryAccess());
     }
 
     @Override
@@ -331,7 +364,8 @@ public class CompanionEntity extends PathfinderMob
         if (player.getItemInHand(hand).isEmpty()) {
             if (player.isShiftKeyDown()) {
                 if (canEdit(player)) {
-                    if (!level().isClientSide) takeAll(player);
+                    //if (!level().isClientSide) takeAll(player);
+                    if (!level().isClientSide && player instanceof ServerPlayer sp) openInventory(sp);
                     return InteractionResult.sidedSuccess(level().isClientSide);
                 }
             } else {
@@ -340,6 +374,12 @@ public class CompanionEntity extends PathfinderMob
             }
         }
         return super.mobInteract(player, hand);
+    }
+
+    private void openInventory(ServerPlayer sp)
+    {
+        sp.openMenu(new SimpleMenuProvider((id, inv, p) -> new CompanionMenu(id, inv, this), getName()),
+                buf -> buf.writeVarInt(getId()));
     }
 
     public void setHome(BlockPos pos) {
@@ -435,7 +475,7 @@ public class CompanionEntity extends PathfinderMob
         teleportTo(target, home.getX() + 0.5, home.getY(), home.getZ() + 0.5, Set.of(), getYRot(), getXRot());
     }
 
-    private void teleportNear(ServerPlayer p) {
+    public void teleportNear(ServerPlayer p) {
         ServerLevel target = p.serverLevel();
         getNavigation().stop();
         for (int i = 0; i < 12; i++) {
@@ -477,6 +517,8 @@ public class CompanionEntity extends PathfinderMob
     {
         if (s.isEmpty()) return null;
 
+        if (s.is(Items.TOTEM_OF_UNDYING)) return EquipmentSlot.OFFHAND;
+
         EquipmentSlot es = s.getEquipmentSlot();      // NeoForge: предметы модов задают слот сами
         if (es == null) {
             Equipable eq = Equipable.get(s);          // ваниль: броня, вырезанная тыква, головы
@@ -503,9 +545,14 @@ public class CompanionEntity extends PathfinderMob
         return false;
     }
 
-    private boolean isGift(ItemEntity ie) {
-        return !ie.isRemoved() && ie.getOwner() instanceof Player
-                && slotFor(ie.getItem()) != null && closestToItem(ie);
+    /** Чего он хочет: брошенное игроком (экипировка или в инвентарь) и свой дроп (в инвентарь). */
+    private boolean wants(ItemEntity ie) {
+        if (ie.isRemoved() || ie.getItem().isEmpty()) return false;
+        ItemStack s = ie.getItem();
+        boolean thrown = ie.getOwner() instanceof Player;
+        if (!thrown && !loot.contains(ie.getUUID())) return false;
+        if (thrown && slotFor(s) != null) return closestToItem(ie);
+        return inventory.canAddItem(s) && closestToItem(ie);
     }
 
     private boolean closestToItem(ItemEntity ie) {
@@ -523,10 +570,11 @@ public class CompanionEntity extends PathfinderMob
     {
         ItemEntity best = null;
         double bestDist = Double.MAX_VALUE;
-        for (ItemEntity ie : level().getEntitiesOfClass(ItemEntity.class, getBoundingBox().inflate(range, 2, range)))
-        {
-            if (!isGift(ie)) continue;
+        for (ItemEntity ie : level().getEntitiesOfClass(ItemEntity.class,
+                getBoundingBox().inflate(range * 2, 2, range * 2))) {
+            double limit = ie.getOwner() instanceof Player ? range : range * 2; // свой дроп замечает дальше
             double d = distanceToSqr(ie);
+            if (d > limit * limit || !wants(ie)) continue;
             if (d < bestDist) { bestDist = d; best = ie; }
         }
         return best;
@@ -535,10 +583,29 @@ public class CompanionEntity extends PathfinderMob
     private void scanForGifts()
     {
         if (isDeadOrDying()) return;
-        for (ItemEntity ie : level().getEntitiesOfClass(ItemEntity.class, getBoundingBox().inflate(1.5, 0.5, 1.5))) {
-            if (ie.hasPickUpDelay() || !isGift(ie)) continue;
-            if (receive(ie, (Player) ie.getOwner())) return; // по одной вещи за проход
+        for (ItemEntity ie : level().getEntitiesOfClass(ItemEntity.class, getBoundingBox().inflate(1.0, 0.5, 1.0))) {
+            if (ie.hasPickUpDelay() || !wants(ie)) continue;
+            if (ie.getOwner() instanceof Player giver && slotFor(ie.getItem()) != null) {
+                if (receive(ie, giver)) return;
+            } else if (store(ie)) {
+                return;
+            }
         }
+    }
+
+    private boolean store(ItemEntity ie) {
+        ItemStack stack = ie.getItem();
+        int before = stack.getCount();
+        ItemStack rest = inventory.addItem(stack.copy());
+        if (rest.getCount() >= before) return false;
+        take(ie, before - rest.getCount());
+        if (rest.isEmpty()) {
+            ie.discard();
+            loot.remove(ie.getUUID());
+        } else {
+            stack.setCount(rest.getCount());
+        }
+        return true;
     }
 
     private boolean receive(ItemEntity ie, Player giver) {
@@ -602,10 +669,21 @@ public class CompanionEntity extends PathfinderMob
                 return true;
             }
         }
+
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack st = inventory.getItem(i);
+            if (!st.isEmpty() && BuiltInRegistries.ITEM.getKey(st.getItem()).equals(rl)) {
+                ItemStack out = st.copy();
+                inventory.setItem(i, ItemStack.EMPTY);
+                dropToward(out, to);
+                to.displayClientMessage(Component.translatable("stcraft.msg.return", getName(), out.getHoverName()), false);
+                return true;
+            }
+        }
         return false;
     }
 
-    /** Что на нём и в руках, для запроса к модели. */
+    /** Что на нём и в руках, для запроса к модели.
     public String describeGear() {
         StringBuilder sb = new StringBuilder();
         for (EquipmentSlot s : EquipmentSlot.values()) {
@@ -624,6 +702,76 @@ public class CompanionEntity extends PathfinderMob
                     .append(" (").append(st.getHoverName().getString()).append("); ");
         }
         return sb.isEmpty() ? "nothing" : sb.toString().trim();
+    }*/
+
+    public String describeWorld() {
+        BlockPos pos = blockPosition();
+        Holder<Biome> biome = level().getBiome(pos);
+        String biomeName = biome.unwrapKey()
+                .map(k -> Component.translatable(
+                        "biome." + k.location().getNamespace() + "." + k.location().getPath()).getString())
+                .orElse("unknown");
+        ResourceLocation dimId = level().dimension().location();
+        String dim = switch (dimId.toString()) {
+            case "minecraft:overworld" -> "the Overworld";
+            case "minecraft:the_nether" -> "the Nether";
+            case "minecraft:the_end" -> "the End";
+            default -> dimId.toString();
+        };
+        StringBuilder sb = new StringBuilder(biomeName).append(" biome in ").append(dim);
+
+        if (!level().dimensionType().hasFixedTime() /*&& this.level().canSeeSky(pos)*/)
+        {
+            long t = level().getDayTime() % 24000L;
+            String part = t < 6000 ? "morning" : t < 12000 ? "afternoon"
+                    : t < 13800 ? "evening" : t < 22200 ? "night" : "dawn";
+            sb.append(", ").append(part);
+        }
+        if (level().dimension() == Level.OVERWORLD) {
+            String weather = level().isThundering() ? "thunderstorm"
+                    : level().isRaining() ? (biome.value().coldEnoughToSnow(pos) ? "snowing" : "raining")
+                    : "clear weather";
+            sb.append(", ").append(weather);
+            if (!weather.equals("clear weather") && !level().canSeeSky(pos)) sb.append(" (you are under cover)");
+        }
+        return sb.toString();
+    }
+
+    public String describeGear() {
+        StringBuilder worn = new StringBuilder();
+        for (EquipmentSlot s : EquipmentSlot.values()) {
+            ItemStack st = getItemBySlot(s);
+            if (st.isEmpty()) continue;
+            String label = switch (s) {
+                case HEAD -> "head";
+                case CHEST -> "chest";
+                case LEGS -> "legs";
+                case FEET -> "feet";
+                case MAINHAND -> "right hand";
+                case OFFHAND -> "left hand";
+                default -> s.getName();
+            };
+            worn.append(label).append(": ").append(BuiltInRegistries.ITEM.getKey(st.getItem()))
+                    .append(" (").append(st.getHoverName().getString()).append("); ");
+        }
+
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        Map<String, String> names = new HashMap<>();
+        for (ItemStack st : inventory.getItems()) {
+            if (st.isEmpty()) continue;
+            String id = BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
+            counts.merge(id, st.getCount(), Integer::sum);
+            names.putIfAbsent(id, st.getHoverName().getString());
+        }
+        StringBuilder carried = new StringBuilder();
+        int shown = 0;
+        for (var e : counts.entrySet()) {
+            if (shown++ >= 20) { carried.append("and more; "); break; }
+            carried.append(e.getKey()).append(" x").append(e.getValue())
+                    .append(" (").append(names.get(e.getKey())).append("); ");
+        }
+        return "equipped: " + (worn.isEmpty() ? "nothing" : worn.toString().trim())
+                + " carried: " + (carried.isEmpty() ? "nothing" : carried.toString().trim());
     }
 
     public Style weaponStyle() {
@@ -728,5 +876,49 @@ public class CompanionEntity extends PathfinderMob
         boolean hurt = super.hurt(source, amount);
         if (hurt && !level().isClientSide) hurtCooldown = REGEN_DELAY_TICKS * 20;
         return hurt;
+    }
+
+    @Override
+    public void die(DamageSource source) {
+        boolean first = !level().isClientSide && !isRemoved() && !dead;
+        Component deathMessage = first ? getCombatTracker().getDeathMessage() : null;
+        super.die(source);
+        if (!first || !(level() instanceof ServerLevel sl)) return;
+
+        MinecraftServer server = sl.getServer();
+        boolean respawn = isRespawnEnabled();
+        int seconds = Config.RESPAWN_SECONDS.get();
+
+        // одно сообщение на всё: причина смерти и, если включено, через сколько он вернётся
+        if (sl.getGameRules().getBoolean(GameRules.RULE_SHOWDEATHMESSAGES)) {
+            MutableComponent msg = Component.empty().append(deathMessage);
+            if (respawn) {
+                msg.append(Component.literal(" ")).append(
+                        Component.translatable("stcraft.msg.respawn_suffix", seconds).withStyle(ChatFormatting.GRAY));
+            }
+            server.getPlayerList().broadcastSystemMessage(msg, false);
+        }
+        if (!respawn) return;
+
+        CompoundTag snap = new CompoundTag();
+        saveWithoutId(snap);
+        snap.putString("id", BuiltInRegistries.ENTITY_TYPE.getKey(getType()).toString());
+        String dim = (spotDim != null ? spotDim : level().dimension().location()).toString();
+        long due = server.overworld().getGameTime() + seconds * 20L;
+        Graveyard.get(server).add(new Graveyard.Entry(snap, due, getMode(), followTarget, spot, dim));
+    }
+
+    /** Вызывается после возвращения: сообщения игрокам и строка в ленте. */
+    public void onRespawned(MinecraftServer server) {
+        String name = getName().getString();
+        for (UUID id : histories.keySet()) {
+            addHistory(id, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.returned", List.of(name)));
+        }
+        Set<UUID> notify = new HashSet<>(histories.keySet());
+        if (followTarget != null) notify.add(followTarget);
+        for (UUID id : notify) {
+            ServerPlayer p = server.getPlayerList().getPlayer(id);
+            if (p != null) p.sendSystemMessage(Component.translatable("stcraft.msg.returned", getName()));
+        }
     }
 }

@@ -6,12 +6,15 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import com.murong.stcraft.client.CompanionInventoryScreen;
 
 @Mod(value = STCraft.MODID, dist = Dist.CLIENT)
 public class STCraftClient {
 
     public STCraftClient(IEventBus modBus) {
         modBus.addListener(STCraftClient::onRenderers);
+        modBus.addListener((RegisterMenuScreensEvent e) -> e.register(STCraft.COMPANION_MENU.get(), CompanionInventoryScreen::new));
     }
 
     private static void onRenderers(EntityRenderersEvent.RegisterRenderers event) {
