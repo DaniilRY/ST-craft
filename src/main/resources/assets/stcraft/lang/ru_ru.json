@@ -51,5 +51,6 @@
   "stcraft.msg.equip": "%s экипировал: %s",
   "stcraft.msg.return": "%s возвращает: %s",
   "stcraft.msg.took_all": "Вы забрали всё снаряжение у %s",
-  "stcraft.msg.respawn_suffix": "(вернётся через %s с)"
+  "stcraft.msg.respawn_suffix": "(вернётся через %s с)",
+  "stcraft.msg.returned": "%s вернулся"
 }

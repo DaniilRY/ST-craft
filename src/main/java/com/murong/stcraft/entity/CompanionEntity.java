@@ -909,11 +909,7 @@ public class CompanionEntity extends PathfinderMob
     }
 
     /** Вызывается после возвращения: сообщения игрокам и строка в ленте. */
-    public void onRespawned(MinecraftServer server) {
-        String name = getName().getString();
-        for (UUID id : histories.keySet()) {
-            addHistory(id, new ChatLine(ChatLine.SYSTEM, "stcraft.chat.returned", List.of(name)));
-        }
+    public void onRespawned(MinecraftServer server){
         Set<UUID> notify = new HashSet<>(histories.keySet());
         if (followTarget != null) notify.add(followTarget);
         for (UUID id : notify) {

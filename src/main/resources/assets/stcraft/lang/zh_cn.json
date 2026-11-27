@@ -50,5 +50,6 @@
   "stcraft.msg.equip": "%s 装备了：%s",
   "stcraft.msg.return": "%s 归还了：%s",
   "stcraft.msg.took_all": "你拿走了 %s 的所有装备",
-  "stcraft.msg.respawn_suffix": "（将在 %s 秒后返回）"
+  "stcraft.msg.respawn_suffix": "（将在 %s 秒后返回）",
+  "stcraft.msg.returned": "%s 已返回"
 }

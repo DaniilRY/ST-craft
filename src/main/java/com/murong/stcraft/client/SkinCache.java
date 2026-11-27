@@ -15,7 +15,8 @@ import java.util.stream.Stream;
 public final class SkinCache {
     private SkinCache() {}
 
-    public static final Path DIR = FMLPaths.CONFIGDIR.get().resolve("stcraft").resolve("skins");
+    //public static final Path DIR = FMLPaths.CONFIGDIR.get().resolve("stcraft").resolve("skins");
+    public static final Path DIR = FMLPaths.GAMEDIR.get().resolve("stcraft-skins");
 
     private static final Map<String, ResourceLocation> READY = new HashMap<>();
     private static final Set<String> TRIED = new HashSet<>();
